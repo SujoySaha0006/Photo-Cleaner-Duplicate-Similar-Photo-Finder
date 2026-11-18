@@ -1,0 +1,2900 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhotoCleaner — Duplicate &amp; Similar Photo Finder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script>
+    (function() {
+      try {
+        var saved = JSON.parse(localStorage.getItem('photocleaner_settings_v1') || '{}');
+        var theme = saved.theme === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        var pref = saved.layoutMode || 'auto';
+        var isMob = /Android|iPhone|iPod|Windows Phone|Mobile/i.test(navigator.userAgent || '');
+        var layout = (pref === 'windows' || pref === 'phone') ? pref : ((window.innerWidth < 768 || (isMob && window.innerWidth < 1024)) ? 'phone' : 'windows');
+        document.documentElement.setAttribute('data-layout', layout);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-layout', window.innerWidth < 768 ? 'phone' : 'windows');
+      }
+    })();
+  </script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root[data-theme="dark"] {
+      --bg-app: #0b1118;
+      --bg-sidebar: #111822;
+      --bg-surface: #161f2c;
+      --bg-elevated: #1d2838;
+      --bg-hover: #253347;
+      --bg-input: #0e151f;
+      --border-subtle: #243142;
+      --border-strong: #374a63;
+      --text-primary: #f1f5f9;
+      --text-secondary: #b4c2d4;
+      --text-muted: #7b8da6;
+      --accent: #38bdf8;
+      --accent-hover: #56ccf9;
+      --accent-soft: rgba(56, 189, 248, 0.14);
+      --accent-text: #06131d;
+      --success: #22c55e;
+      --success-soft: rgba(34, 197, 94, 0.14);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.15);
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.15);
+    }
+
+    :root[data-theme="light"] {
+      --bg-app: #f3f6fa;
+      --bg-sidebar: #ffffff;
+      --bg-surface: #ffffff;
+      --bg-elevated: #f8fafc;
+      --bg-hover: #edf2f7;
+      --bg-input: #f8fafc;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #64748b;
+      --accent: #0284c7;
+      --accent-hover: #0369a1;
+      --accent-soft: rgba(2, 132, 199, 0.12);
+      --accent-text: #ffffff;
+      --success: #16a34a;
+      --success-soft: rgba(22, 163, 74, 0.12);
+      --warning: #d97706;
+      --warning-soft: rgba(217, 119, 6, 0.12);
+      --danger: #dc2626;
+      --danger-soft: rgba(220, 38, 38, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-app);
+      color: var(--text-primary);
+      overflow-x: hidden;
+    }
+
+    .surface { background-color: var(--bg-surface); border: 1px solid var(--border-subtle); }
+    .kpi-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.15rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .kpi-card:hover { border-color: var(--border-strong); }
+    .kpi-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .hero-banner {
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.14) 0%, rgba(37, 99, 235, 0.08) 55%, var(--bg-surface) 100%);
+      border: 1px solid var(--border-strong);
+      border-radius: 16px;
+    }
+    .elevated { background-color: var(--bg-elevated); border: 1px solid var(--border-subtle); }
+    .sidebar { background-color: var(--bg-sidebar); border-right: 1px solid var(--border-subtle); }
+    .input-field {
+      background-color: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      outline: none;
+    }
+    .input-field:focus { border-color: var(--accent); }
+    .text-sec { color: var(--text-secondary); }
+    .text-mut { color: var(--text-muted); }
+
+    .nav-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.6rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+      text-align: left;
+    }
+    .nav-btn:hover { background-color: var(--bg-hover); color: var(--text-primary); }
+    .nav-btn.active { background-color: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.52rem 0.95rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border-subtle);
+      background-color: var(--bg-elevated);
+      color: var(--text-primary);
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .btn:hover:not(:disabled) { background-color: var(--bg-hover); border-color: var(--border-strong); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary {
+      background-color: var(--accent);
+      color: var(--accent-text);
+      border-color: transparent;
+      font-weight: 600;
+    }
+    .btn-primary:hover:not(:disabled) { background-color: var(--accent-hover); }
+    .btn-danger {
+      background-color: var(--danger);
+      color: #ffffff;
+      border-color: transparent;
+      font-weight: 600;
+    }
+    .btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .badge-keep { background: var(--success-soft); color: var(--success); border: 1px solid var(--success); }
+    .badge-remove { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger); }
+    .badge-protected { background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning); }
+    .badge-cat { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+
+    .photo-card {
+      background-color: var(--bg-elevated);
+      border: 2px solid var(--border-subtle);
+      border-radius: 12px;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .photo-card.marked { border-color: var(--danger); background-color: var(--danger-soft); }
+    .photo-card.keeper { border-color: var(--success); }
+    .photo-card.protected-card { border-color: var(--warning); }
+
+    .dropzone {
+      border: 2px dashed var(--border-strong);
+      border-radius: 14px;
+      background: var(--bg-elevated);
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .dropzone.dragover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .compare-viewport {
+      overflow: auto;
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      height: 360px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 60;
+      max-width: 380px;
+      padding: 0.8rem 1rem;
+      border-radius: 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+      display: none;
+    }
+    .toast.show { display: flex; align-items: center; gap: 0.6rem; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(0, 0, 0, 0.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-backdrop.open { display: flex; }
+
+    .split-wrap {
+      position: relative;
+      width: 100%;
+      height: 360px;
+      overflow: hidden;
+      border-radius: 10px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      user-select: none;
+    }
+    .split-wrap img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    /* Adaptive Platform Layouts: Windows Desktop vs Phone */
+    .phone-bottom-nav, .phone-more-sheet { display: none; }
+
+    :root[data-layout="windows"] #mobileTopHeader { display: none !important; }
+    :root[data-layout="windows"] #sidebar { display: flex !important; width: 16rem; }
+    :root[data-layout="windows"] body { flex-direction: row !important; }
+    :root[data-layout="windows"] .win-titlebar-badge { display: inline-flex; }
+
+    :root[data-layout="phone"] #sidebar { display: none !important; }
+    :root[data-layout="phone"] #mobileTopHeader {
+      display: flex !important;
+      position: sticky;
+      top: 0;
+      z-index: 35;
+      backdrop-filter: blur(12px);
+    }
+    :root[data-layout="phone"] body { flex-direction: column !important; }
+    :root[data-layout="phone"] main { padding: 1rem 0.9rem 5.5rem 0.9rem !important; }
+    :root[data-layout="phone"] .btn { min-height: 42px; }
+    :root[data-layout="phone"] .compare-viewport { height: 240px; }
+    :root[data-layout="phone"] .split-wrap { height: 260px; }
+    :root[data-layout="phone"] .toast { bottom: 78px; right: 12px; left: 12px; max-width: none; }
+    :root[data-layout="phone"] .phone-bottom-nav {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 40;
+      background-color: var(--bg-sidebar);
+      border-top: 1px solid var(--border-subtle);
+      padding: 0.35rem 0.25rem calc(0.35rem + env(safe-area-inset-bottom, 0px));
+    }
+    .phone-tab-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.15rem;
+      padding: 0.35rem 0.2rem;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .phone-tab-btn.active {
+      color: var(--accent);
+      background-color: var(--accent-soft);
+      font-weight: 600;
+    }
+    .phone-more-sheet.open {
+      display: flex;
+      position: fixed;
+      inset: 0;
+      z-index: 45;
+      background: rgba(0, 0, 0, 0.55);
+      align-items: flex-end;
+    }
+    .phone-more-panel {
+      width: 100%;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-strong);
+      border-radius: 18px 18px 0 0;
+      padding: 1rem 1rem 1.5rem;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col lg:flex-row">
+
+  <!-- Phone Top App Bar -->
+  <header id="mobileTopHeader" class="lg:hidden flex items-center justify-between px-4 py-3 sidebar border-b">
+    <div class="flex items-center gap-2.5">
+      <svg class="w-8 h-8" viewBox="0 0 256 256" aria-hidden="true">
+        <defs>
+          <linearGradient id="mBg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0EA5E9"/>
+            <stop offset="100%" stop-color="#2563EB"/>
+          </linearGradient>
+        </defs>
+        <rect x="16" y="16" width="224" height="224" rx="48" fill="url(#mBg)"/>
+        <rect x="46" y="58" width="118" height="96" rx="16" fill="#FFFFFF" fill-opacity="0.28"/>
+        <rect x="78" y="88" width="132" height="106" rx="18" fill="#FFFFFF"/>
+        <circle cx="114" cy="122" r="13" fill="#0EA5E9"/>
+        <path d="M92 174 L128 134 L154 160 L174 140 L198 174 Z" fill="#1E3A8A"/>
+        <circle cx="192" cy="76" r="24" fill="#22C55E" stroke="#FFFFFF" stroke-width="5"/>
+        <path d="M182 76 L189 83 L203 69" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <div class="font-bold text-sm leading-tight">PhotoCleaner</div>
+        <div id="phoneHeaderSubtitle" class="text-[11px] text-mut">Dashboard • Phone Mode</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="mobileThemeBtn" class="btn text-xs px-2.5 py-1.5" title="Toggle Theme">Theme</button>
+      <button id="mobileMenuBtn" class="btn text-xs px-2.5 py-1.5" aria-label="More Pages">More</button>
+    </div>
+  </header>
+
+  <!-- Sidebar Navigation -->
+  <aside id="sidebar" class="sidebar hidden lg:flex flex-col w-full lg:w-64 shrink-0 p-4 gap-1.5">
+    <div class="hidden lg:flex items-center gap-3 px-2 py-2 mb-3">
+      <svg class="w-9 h-9 shrink-0" viewBox="0 0 256 256" aria-hidden="true">
+        <defs>
+          <linearGradient id="dBg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0EA5E9"/>
+            <stop offset="100%" stop-color="#2563EB"/>
+          </linearGradient>
+        </defs>
+        <rect x="16" y="16" width="224" height="224" rx="48" fill="url(#dBg)"/>
+        <rect x="46" y="58" width="118" height="96" rx="16" fill="#FFFFFF" fill-opacity="0.28"/>
+        <rect x="78" y="88" width="132" height="106" rx="18" fill="#FFFFFF"/>
+        <circle cx="114" cy="122" r="13" fill="#0EA5E9"/>
+        <path d="M92 174 L128 134 L154 160 L174 140 L198 174 Z" fill="#1E3A8A"/>
+        <circle cx="192" cy="76" r="24" fill="#22C55E" stroke="#FFFFFF" stroke-width="5"/>
+        <path d="M182 76 L189 83 L203 69" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <div class="font-bold text-base leading-tight">PhotoCleaner</div>
+        <div id="desktopPlatformLabel" class="text-xs text-mut">Windows Layout • Offline</div>
+      </div>
+    </div>
+
+    <nav class="flex flex-col gap-1" id="navList">
+      <button class="nav-btn active" data-page="dashboard"><span>📊</span> Dashboard</button>
+      <button class="nav-btn" data-page="scan"><span>🔍</span> Scan Photos</button>
+      <button class="nav-btn" data-page="exact">
+        <span>🧬</span> Exact Duplicates
+        <span id="navExactBadge" class="ml-auto text-xs px-2 py-0.5 rounded-full elevated">0</span>
+      </button>
+      <button class="nav-btn" data-page="similar">
+        <span>🖼️</span> Similar Photos
+        <span id="navSimilarBadge" class="ml-auto text-xs px-2 py-0.5 rounded-full elevated">0</span>
+      </button>
+      <button class="nav-btn" data-page="large"><span>💾</span> Large Photos</button>
+      <button class="nav-btn" data-page="compare"><span>⚖️</span> Image Comparison</button>
+      <button class="nav-btn" data-page="history"><span>🕘</span> Scan &amp; Cleanup History</button>
+      <button class="nav-btn" data-page="settings"><span>⚙️</span> Settings</button>
+    </nav>
+
+    <div class="mt-auto pt-4 border-t border-[var(--border-subtle)] flex flex-col gap-2">
+      <div class="text-xs text-mut px-2">
+        Zero cloud uploads. Every hash &amp; comparison runs locally inside your browser.
+      </div>
+      <button id="themeToggleBtn" class="btn w-full justify-center text-xs">
+        Switch to Light Theme (Ctrl+T)
+      </button>
+      <button id="btnSidebarPrivacyClear" class="btn btn-danger w-full justify-center text-xs" title="Erase all scanned photos, history, previews, and local data for privacy">
+        🔒 Clear All Activity
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+
+    <!-- PAGE 1: DASHBOARD -->
+    <section id="page-dashboard" class="page-section max-w-6xl mx-auto space-y-6">
+      <!-- Top Header Bar -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-2xl font-bold tracking-tight">Dashboard</h1>
+            <span class="badge badge-cat">100% Offline</span>
+          </div>
+          <p id="dashSubtitle" class="text-xs sm:text-sm text-mut mt-1">
+            Private on-device duplicate &amp; similar photo intelligence — zero cloud uploads.
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="dashDemoBtn" class="btn">✨ Try 1-Click Demo</button>
+          <button id="dashDownloadZipBtn" class="btn" disabled>⬇ Download Clean (.zip)</button>
+          <button id="dashQuickScanBtn" class="btn btn-primary">🔍 Scan Photos</button>
+        </div>
+      </div>
+
+      <!-- Professional Hero Overview Card -->
+      <div class="hero-banner p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+        <div class="space-y-2 max-w-2xl">
+          <div class="text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">Smart Photo Library Cleaner</div>
+          <h2 class="text-lg sm:text-xl font-bold leading-snug">
+            Reclaim gigabytes safely without uploading a single photo.
+          </h2>
+          <p class="text-xs sm:text-sm text-sec leading-relaxed">
+            PhotoCleaner uses cryptographic SHA-256 and perceptual DCT hashing directly inside your browser to separate exact duplicates, resizes, edits, rotations, and bursts—while always protecting your best copy.
+          </p>
+        </div>
+        <div class="flex flex-col sm:flex-row lg:flex-col gap-2.5 shrink-0">
+          <button id="dashGoScanBtn" class="btn btn-primary px-5 py-2.5">Open Folder Scanner →</button>
+          <div class="text-[11px] text-mut text-center">Supports JPG, PNG, WEBP, BMP, GIF</div>
+        </div>
+      </div>
+
+      <!-- 4-Column KPI Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div class="kpi-card">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-medium text-mut">Active Clean Photos</span>
+            <span class="kpi-icon" style="background: var(--accent-soft); color: var(--accent);">📷</span>
+          </div>
+          <div id="kpiTotalPhotos" class="text-3xl font-bold tabular-nums mt-3">0</div>
+          <div class="text-[11px] text-mut mt-1">Indexed in workspace</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-medium text-mut">Exact Duplicates</span>
+            <span class="kpi-icon" style="background: var(--danger-soft); color: var(--danger);">🧬</span>
+          </div>
+          <div id="kpiExactGroups" class="text-3xl font-bold tabular-nums mt-3">0</div>
+          <div class="text-[11px] text-mut mt-1">Byte-identical SHA-256 groups</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-medium text-mut">Similar Groups</span>
+            <span class="kpi-icon" style="background: var(--warning-soft); color: var(--warning);">🖼️</span>
+          </div>
+          <div id="kpiSimilarGroups" class="text-3xl font-bold tabular-nums mt-3">0</div>
+          <div class="text-[11px] text-mut mt-1">Resizes, edits, flips &amp; bursts</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-medium text-mut">Potential Recovery</span>
+            <span class="kpi-icon" style="background: var(--success-soft); color: var(--success);">💾</span>
+          </div>
+          <div id="kpiSavings" class="text-3xl font-bold tabular-nums mt-3 text-[var(--accent)]">0 B</div>
+          <div id="kpiReclaimedSub" class="text-[11px] text-mut mt-1">Reclaimed this session: 0 B</div>
+        </div>
+      </div>
+
+      <!-- 3-Step Guided Workflow Strip -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="surface rounded-xl p-4 flex items-start gap-3">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style="background: var(--accent-soft); color: var(--accent);">1</div>
+          <div>
+            <div class="text-xs font-semibold">Drop Folders or Photos</div>
+            <p class="text-[11px] text-mut mt-0.5">Select any folder with subfolders or try the instant demo set.</p>
+          </div>
+        </div>
+        <div class="surface rounded-xl p-4 flex items-start gap-3">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style="background: var(--warning-soft); color: var(--warning);">2</div>
+          <div>
+            <div class="text-xs font-semibold">Smart Auto Mark &amp; Compare</div>
+            <p class="text-[11px] text-mut mt-0.5">Inspect side-by-side with pixel diff heatmap; best copy stays locked.</p>
+          </div>
+        </div>
+        <div class="surface rounded-xl p-4 flex items-start gap-3">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style="background: var(--success-soft); color: var(--success);">3</div>
+          <div>
+            <div class="text-xs font-semibold">Delete &amp; Download Clean ZIP</div>
+            <p class="text-[11px] text-mut mt-0.5">Remove single or multiple duplicates and export your clean library.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity Tables -->
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div class="surface rounded-xl p-5 flex flex-col">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-sm">Recent Scan Sessions</h3>
+            <span class="text-[11px] text-mut">Live session log</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="text-mut border-b border-[var(--border-subtle)]">
+                <tr>
+                  <th class="py-2 pr-3 font-medium">Time</th>
+                  <th class="py-2 pr-3 font-medium">Mode</th>
+                  <th class="py-2 pr-3 font-medium">Photos</th>
+                  <th class="py-2 pr-3 font-medium">Groups</th>
+                  <th class="py-2 font-medium text-right">Savings</th>
+                </tr>
+              </thead>
+              <tbody id="dashScansBody" class="divide-y divide-[var(--border-subtle)]">
+                <tr><td colspan="5" class="py-8 text-center text-mut">No scans yet — click <strong>Try 1-Click Demo</strong> or <strong>Scan Photos</strong> to begin.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="surface rounded-xl p-5 flex flex-col">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-sm">Recent Cleanup Actions</h3>
+            <span class="text-[11px] text-mut">Undo available in History</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="text-mut border-b border-[var(--border-subtle)]">
+                <tr>
+                  <th class="py-2 pr-3 font-medium">Time</th>
+                  <th class="py-2 pr-3 font-medium">Filename</th>
+                  <th class="py-2 pr-3 font-medium">Size</th>
+                  <th class="py-2 font-medium text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody id="dashCleanupBody" class="divide-y divide-[var(--border-subtle)]">
+                <tr><td colspan="4" class="py-8 text-center text-mut">No duplicates removed yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE 2: SCAN PHOTOS -->
+    <section id="page-scan" class="page-section hidden space-y-5">
+      <div>
+        <h1 class="text-2xl font-bold">Scan Photos</h1>
+        <p class="text-sm text-mut mt-0.5">Select folders or photos from your PC, or drag and drop them below.</p>
+      </div>
+
+      <!-- Dropzone -->
+      <div id="dropzone" class="dropzone p-8 text-center">
+        <div class="text-4xl mb-2">📂</div>
+        <div class="font-semibold text-base">Drag &amp; Drop Photo Folders or Images Here</div>
+        <p class="text-xs text-mut mt-1 mb-4">Supports JPG, JPEG, PNG, WEBP, BMP, GIF — processed 100% locally in RAM</p>
+        <div class="flex flex-wrap justify-center gap-2.5">
+          <button id="btnPickFolder" class="btn btn-primary">Select Folder (with Subfolders)</button>
+          <button id="btnPickFiles" class="btn">Select Photo Files</button>
+          <button id="btnLoadDemo" class="btn">Load 14-Photo Demo Dataset</button>
+          <button id="btnClearQueue" class="btn">Clear Queue</button>
+        </div>
+        <input id="inputFolder" type="file" webkitdirectory directory multiple class="hidden" />
+        <input id="inputFiles" type="file" accept="image/*" multiple class="hidden" />
+        <div id="queuedInfo" class="mt-4 text-xs text-sec font-medium">No photos queued yet.</div>
+      </div>
+
+      <!-- Scan Configuration -->
+      <div class="surface rounded-xl p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs text-mut mb-1.5 font-medium" for="scanModeSelect">Scan Mode</label>
+          <select id="scanModeSelect" class="input-field w-full text-sm">
+            <option value="both" selected>Exact + Similar Photos</option>
+            <option value="exact">Exact Duplicates Only (SHA-256)</option>
+            <option value="similar">Similar Photos Only (pHash + dHash)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-mut mb-1.5 font-medium" for="profileSelect">Matching Sensitivity</label>
+          <select id="profileSelect" class="input-field w-full text-sm">
+            <option value="very_strict">Very Strict (Near-identical only)</option>
+            <option value="strict">Strict (High confidence)</option>
+            <option value="balanced" selected>Balanced (Recommended)</option>
+            <option value="relaxed">Relaxed (Broader variations)</option>
+            <option value="aggressive">Aggressive (Review carefully)</option>
+          </select>
+        </div>
+        <div class="flex flex-col justify-center gap-1.5 pt-2">
+          <label class="inline-flex items-center gap-2 text-xs cursor-pointer">
+            <input id="chkRotations" type="checkbox" checked class="accent-[var(--accent)]" />
+            Detect rotated photos (90° / 180° / 270°)
+          </label>
+          <label class="inline-flex items-center gap-2 text-xs cursor-pointer">
+            <input id="chkFlips" type="checkbox" checked class="accent-[var(--accent)]" />
+            Detect flipped &amp; center-cropped edits
+          </label>
+        </div>
+      </div>
+
+      <!-- Controls & Live Progress -->
+      <div class="surface rounded-xl p-5 space-y-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <button id="btnStartScan" class="btn btn-primary" disabled>Start Scan</button>
+          <button id="btnCancelScan" class="btn btn-danger" disabled>Cancel Scan</button>
+          <span id="scanStatusText" class="text-sm text-sec ml-auto">Queue photos above to begin.</span>
+        </div>
+        <div class="w-full h-3 rounded-full overflow-hidden bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+          <div id="scanProgressBar" class="h-full bg-[var(--accent)] transition-all duration-150" style="width: 0%"></div>
+        </div>
+        <div id="scanCurrentFile" class="text-xs text-mut truncate">Current file: —</div>
+      </div>
+    </section>
+
+    <!-- PAGE 3 & 4: RESULTS (EXACT DUPLICATES & SIMILAR PHOTOS) -->
+    <section id="page-results" class="page-section hidden space-y-4">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <h1 id="resultsTitle" class="text-2xl font-bold">Exact Duplicates</h1>
+          <p id="resultsSummary" class="text-sm text-mut mt-0.5">0 groups found</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnAutoMarkAll" class="btn btn-primary">Smart Auto Mark</button>
+          <button id="btnResetSelAll" class="btn">Reset Selection</button>
+          <button id="btnOpenCleanupModal" class="btn btn-danger" disabled>Delete Selected (0)</button>
+          <button id="btnDownloadCleanZip" class="btn" disabled>Download Clean Photos (.zip)</button>
+        </div>
+      </div>
+
+      <!-- Filter & View Toolbar -->
+      <div class="surface rounded-xl p-3.5 flex flex-wrap items-center gap-2.5">
+        <input id="resultsSearch" type="text" placeholder="Search filename or folder…" class="input-field text-xs flex-1 min-w-[180px]" />
+        <select id="resultsCatFilter" class="input-field text-xs">
+          <option value="all">All Categories</option>
+          <option value="exact_duplicate">Exact Duplicate</option>
+          <option value="near_identical">Near-Identical</option>
+          <option value="edited_version">Edited Version</option>
+          <option value="visually_similar">Visually Similar</option>
+          <option value="burst_photo">Burst Photograph</option>
+        </select>
+        <select id="resultsSort" class="input-field text-xs">
+          <option value="savings">Sort: Largest Savings</option>
+          <option value="similarity">Sort: Highest Similarity</option>
+          <option value="count">Sort: Most Photos</option>
+        </select>
+        <button id="btnToggleViewMode" class="btn text-xs">List View</button>
+      </div>
+
+      <!-- Post-Cleanup Ready-to-Download Banner -->
+      <div id="cleanupDoneBanner" class="hidden surface rounded-xl p-4 border-[var(--success)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="font-semibold text-sm text-[var(--success)]">Cleanup Complete — Clean Photo Library Ready</div>
+          <div id="cleanupDoneText" class="text-xs text-sec mt-0.5">All selected duplicates were removed safely.</div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnBannerDownloadZip" class="btn btn-primary text-xs">Download Clean Photos (.zip)</button>
+          <button id="btnBannerPsScript" class="btn text-xs">Download Windows Recycle Bin Script (.ps1)</button>
+          <button id="btnBannerPrivacyClear" class="btn btn-danger text-xs">🔒 Clear All Activity</button>
+        </div>
+      </div>
+
+      <!-- Groups Container -->
+      <div id="resultsContainer" class="space-y-4"></div>
+    </section>
+
+    <!-- PAGE 5: LARGE PHOTOS -->
+    <section id="page-large" class="page-section hidden space-y-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold">Large Photos</h1>
+          <p id="largeSummary" class="text-sm text-mut mt-0.5">Identify space-heavy photographs in your library.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="largeThresholdKb" class="text-xs text-mut">Min Size (KB):</label>
+          <input id="largeThresholdKb" type="number" min="1" max="500000" value="50" class="input-field w-28 text-xs" />
+          <button id="btnRefreshLarge" class="btn btn-primary text-xs">Analyze</button>
+        </div>
+      </div>
+
+      <div id="largeFormatBars" class="surface rounded-xl p-4 space-y-2">
+        <div class="text-xs font-semibold text-sec">Storage by Format</div>
+        <div id="largeFormatContent" class="text-xs text-mut">Scan photos to see format breakdown.</div>
+      </div>
+
+      <div class="surface rounded-xl overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="text-mut border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+            <tr>
+              <th class="p-3">Preview</th>
+              <th class="p-3">Filename</th>
+              <th class="p-3">Size</th>
+              <th class="p-3">Resolution</th>
+              <th class="p-3">Format</th>
+              <th class="p-3">Folder</th>
+            </tr>
+          </thead>
+          <tbody id="largeTableBody" class="divide-y divide-[var(--border-subtle)]">
+            <tr><td colspan="6" class="p-6 text-center text-mut">No photos scanned yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PAGE 6: IMAGE COMPARISON -->
+    <section id="page-compare" class="page-section hidden space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold">Image Comparison</h1>
+          <p id="compareExplain" class="text-sm text-mut mt-0.5">Select any two photos from a group or pick from the dropdowns below.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btnZoomOut" class="btn text-xs">Zoom −</button>
+          <span id="zoomLabel" class="text-xs font-semibold px-2">100%</span>
+          <button id="btnZoomIn" class="btn text-xs">Zoom +</button>
+          <button id="btnZoomReset" class="btn text-xs">Fit</button>
+          <button id="btnToggleSplit" class="btn text-xs">Split Curtain</button>
+          <button id="btnToggleHeatmap" class="btn btn-primary text-xs">Highlight Pixel Differences</button>
+        </div>
+      </div>
+
+      <div class="surface rounded-xl p-3.5 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold text-mut shrink-0">Left:</span>
+          <select id="compareSelectA" class="input-field text-xs w-full"></select>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold text-mut shrink-0">Right:</span>
+          <select id="compareSelectB" class="input-field text-xs w-full"></select>
+        </div>
+      </div>
+
+      <!-- Side-by-Side Mode -->
+      <div id="compareSideBySide" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="compare-viewport" id="viewportA">
+          <img id="compareImgA" alt="Left comparison photo" class="max-w-full max-h-full transition-transform duration-100" />
+        </div>
+        <div class="compare-viewport" id="viewportB">
+          <img id="compareImgB" alt="Right comparison photo" class="max-w-full max-h-full transition-transform duration-100" />
+          <canvas id="compareDiffCanvas" class="hidden max-w-full max-h-full"></canvas>
+        </div>
+      </div>
+
+      <!-- Split Curtain Mode -->
+      <div id="compareSplitMode" class="hidden space-y-2">
+        <div class="split-wrap">
+          <img id="splitImgB" alt="Right layer" />
+          <img id="splitImgA" alt="Left layer" style="clip-path: inset(0 50% 0 0);" />
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-mut">Left</span>
+          <input id="splitRange" type="range" min="0" max="100" value="50" class="w-full accent-[var(--accent)]" />
+          <span class="text-xs text-mut">Right</span>
+        </div>
+      </div>
+
+      <!-- Metadata Diff Table -->
+      <div class="surface rounded-xl overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="text-mut border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+            <tr>
+              <th class="p-3 w-40">Attribute</th>
+              <th class="p-3">Left Photograph</th>
+              <th class="p-3">Right Photograph</th>
+            </tr>
+          </thead>
+          <tbody id="compareMetaBody" class="divide-y divide-[var(--border-subtle)]">
+            <tr><td colspan="3" class="p-4 text-center text-mut">Load two photographs to inspect metadata differences.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PAGE 7: HISTORY & EXPORT -->
+    <section id="page-history" class="page-section hidden space-y-5">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold">Scan &amp; Cleanup History</h1>
+          <p class="text-sm text-mut mt-0.5">Audit trail of scans, cleaned files, undo restores, and Windows Recycle Bin scripts.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnHistoryDownloadZip" class="btn btn-primary text-xs">Download Clean Photos (.zip)</button>
+          <button id="btnDownloadPsScript" class="btn text-xs">Download Windows Recycle Bin Script (.ps1)</button>
+          <button id="btnDownloadCsv" class="btn text-xs">Export CSV Report</button>
+          <button id="btnHistoryPrivacyClear" class="btn btn-danger text-xs">🔒 Clear All Activity</button>
+        </div>
+      </div>
+
+      <div class="surface rounded-xl p-5">
+        <h2 class="font-semibold text-sm mb-3">Cleanup Audit Log</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="text-mut border-b border-[var(--border-subtle)]">
+              <tr>
+                <th class="py-2 pr-3">Timestamp</th>
+                <th class="py-2 pr-3">Filename</th>
+                <th class="py-2 pr-3">Size</th>
+                <th class="py-2 pr-3">Action</th>
+                <th class="py-2">Restore</th>
+              </tr>
+            </thead>
+            <tbody id="historyCleanupBody" class="divide-y divide-[var(--border-subtle)]">
+              <tr><td colspan="5" class="py-4 text-center text-mut">No cleanup operations recorded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="surface rounded-xl p-5">
+        <h2 class="font-semibold text-sm mb-3">Scan Sessions</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="text-mut border-b border-[var(--border-subtle)]">
+              <tr>
+                <th class="py-2 pr-3">Timestamp</th>
+                <th class="py-2 pr-3">Mode</th>
+                <th class="py-2 pr-3">Profile</th>
+                <th class="py-2 pr-3">Scanned</th>
+                <th class="py-2 pr-3">Exact</th>
+                <th class="py-2 pr-3">Similar</th>
+                <th class="py-2">Potential Savings</th>
+              </tr>
+            </thead>
+            <tbody id="historyScansBody" class="divide-y divide-[var(--border-subtle)]">
+              <tr><td colspan="7" class="py-4 text-center text-mut">No scans recorded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE 8: SETTINGS -->
+    <section id="page-settings" class="page-section hidden space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold">Settings</h1>
+          <p class="text-sm text-mut mt-0.5">Preferences are saved locally in your browser.</p>
+        </div>
+        <button id="btnSaveSettings" class="btn btn-primary">Save Settings</button>
+      </div>
+
+      <div class="surface rounded-xl p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div>
+          <label class="block text-xs text-mut mb-1.5 font-medium" for="setTheme">Theme</label>
+          <select id="setTheme" class="input-field w-full text-sm">
+            <option value="dark">Dark Theme (Windows 11 Mica)</option>
+            <option value="light">Light Theme</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-mut mb-1.5 font-medium" for="setLayoutMode">Device Layout Mode</label>
+          <select id="setLayoutMode" class="input-field w-full text-sm">
+            <option value="auto">Auto (Windows on PC, Phone on Mobile)</option>
+            <option value="windows">Windows Desktop Layout</option>
+            <option value="phone">Phone Mobile Layout</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-mut mb-1.5 font-medium" for="setRetention">Smart Auto Mark Primary Retention Rule</label>
+          <select id="setRetention" class="input-field w-full text-sm">
+            <option value="highest_resolution">Keep Highest Resolution</option>
+            <option value="largest_file_size">Keep Largest File Size</option>
+            <option value="original_format">Keep Original Format (PNG/TIFF &gt; JPG &gt; WEBP)</option>
+            <option value="earliest_date">Keep Earliest Date</option>
+            <option value="latest_date">Keep Latest Date</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-mut mb-1.5 font-medium" for="setBurstSec">Burst Photo Window (seconds)</label>
+          <input id="setBurstSec" type="number" min="1" max="30" value="3" class="input-field w-full text-sm" />
+        </div>
+        <div class="flex items-end">
+          <button id="btnResetAllApp" class="btn btn-danger w-full">Reset All Workspace Data</button>
+        </div>
+      </div>
+
+      <div class="surface rounded-xl p-5 space-y-2">
+        <h2 class="font-semibold text-sm">Safety Guarantees</h2>
+        <ul class="text-xs text-sec space-y-1 list-disc pl-5">
+          <li>At least one photograph is always preserved in every duplicate or similar group.</li>
+          <li>Protected photographs can never be marked by Smart Auto Mark or manual selection.</li>
+          <li>Browsers cannot silently delete files from your Windows drive — cleanup generates a verified Windows PowerShell script that moves only your confirmed files to the Windows Recycle Bin.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <!-- Cleanup Confirmation Modal -->
+  <div id="cleanupModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="cleanupModalTitle">
+    <div class="surface rounded-2xl max-w-xl w-full p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 id="cleanupModalTitle" class="text-lg font-bold">Confirm Safe Cleanup</h2>
+        <button id="btnCloseCleanupModal" class="btn text-xs px-2.5 py-1">✕</button>
+      </div>
+      <div id="cleanupModalStats" class="text-sm font-semibold text-[var(--accent)]"></div>
+      <p class="text-xs text-sec">
+        Every group keeps at least one copy, and protected photos are excluded. Confirming removes these copies from active groups (with 1-click Undo in History) and lets you download a 1-click Windows Recycle Bin script.
+      </p>
+      <div id="cleanupModalList" class="elevated rounded-lg max-h-56 overflow-y-auto p-3 text-xs space-y-1.5"></div>
+      <div class="flex flex-wrap justify-end gap-2 pt-2">
+        <button id="btnCancelCleanup" class="btn">Cancel</button>
+        <button id="btnConfirmCleanup" class="btn btn-danger">Confirm Safe Cleanup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Privacy Wipe Confirmation Modal -->
+  <div id="privacyModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="privacyModalTitle">
+    <div class="surface rounded-2xl max-w-md w-full p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 id="privacyModalTitle" class="text-lg font-bold">🔒 Clear All Activity?</h2>
+        <button id="btnClosePrivacyModal" class="btn text-xs px-2.5 py-1">✕</button>
+      </div>
+      <p class="text-xs text-sec leading-relaxed">
+        This immediately erases every trace of your session from this website so no one can see what photos were scanned, compared, or cleaned:
+      </p>
+      <ul class="text-xs text-mut space-y-1 list-disc pl-5">
+        <li>All loaded photo previews &amp; memory URLs revoked</li>
+        <li>All Exact Duplicate &amp; Similar Photo groups cleared</li>
+        <li>All Scan History &amp; Cleanup Audit Logs wiped</li>
+        <li>Comparison viewer &amp; browser local storage cleared</li>
+      </ul>
+      <div class="flex justify-end gap-2 pt-2">
+        <button id="btnCancelPrivacy" class="btn">Cancel</button>
+        <button id="btnConfirmPrivacy" class="btn btn-danger">Erase All Activity Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phone Bottom Navigation Bar -->
+  <nav id="phoneBottomNav" class="phone-bottom-nav" aria-label="Mobile Navigation">
+    <button class="phone-tab-btn active" data-page="dashboard"><span class="text-base">📊</span><span>Home</span></button>
+    <button class="phone-tab-btn" data-page="scan"><span class="text-base">🔍</span><span>Scan</span></button>
+    <button class="phone-tab-btn" data-page="exact"><span class="text-base">🧬</span><span>Exact (<span id="phoneExactCnt">0</span>)</span></button>
+    <button class="phone-tab-btn" data-page="similar"><span class="text-base">🖼️</span><span>Similar (<span id="phoneSimCnt">0</span>)</span></button>
+    <button id="phoneMoreTabBtn" class="phone-tab-btn" data-page="more"><span class="text-base">☰</span><span>More</span></button>
+  </nav>
+
+  <!-- Phone Slide-Up More Drawer -->
+  <div id="phoneMoreSheet" class="phone-more-sheet" role="dialog" aria-modal="true" aria-label="More Views">
+    <div class="phone-more-panel space-y-2">
+      <div class="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
+        <span class="font-semibold text-sm">More Tools</span>
+        <button id="btnCloseMoreSheet" class="btn text-xs py-1 px-2.5">Close</button>
+      </div>
+      <button class="nav-btn" data-page="large"><span>💾</span> Large Photos</button>
+      <button class="nav-btn" data-page="compare"><span>⚖️</span> Image Comparison</button>
+      <button class="nav-btn" data-page="history"><span>🕘</span> Scan &amp; Cleanup History</button>
+      <button class="nav-btn" data-page="settings"><span>⚙️</span> Settings &amp; Layout</button>
+      <button id="btnPhonePrivacyClear" class="btn btn-danger w-full justify-center text-xs mt-2">🔒 Clear All Activity (Privacy Wipe)</button>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast" role="status" aria-live="polite">
+    <span id="toastIcon">ℹ️</span>
+    <span id="toastMsg" class="text-xs font-medium"></span>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      // ================================================================
+      // STATE & SETTINGS
+      // ================================================================
+      const DEFAULT_SETTINGS = {
+        theme: 'dark',
+        layoutMode: 'auto',
+        retentionRule: 'highest_resolution',
+        burstSeconds: 3
+      };
+
+      const PROFILES = {
+        very_strict: { maxP: 6, maxD: 8, nearP: 3, editP: 6, minColor: 0.78 },
+        strict:      { maxP: 10, maxD: 12, nearP: 4, editP: 8, minColor: 0.70 },
+        balanced:    { maxP: 14, maxD: 16, nearP: 5, editP: 10, minColor: 0.60 },
+        relaxed:     { maxP: 18, maxD: 20, nearP: 6, editP: 12, minColor: 0.50 },
+        aggressive:  { maxP: 22, maxD: 24, nearP: 7, editP: 14, minColor: 0.42 }
+      };
+
+      const FORMAT_RANK = { png: 90, tiff: 92, tif: 92, bmp: 75, jpg: 70, jpeg: 70, webp: 60, gif: 40 };
+
+      const state = {
+        settings: loadSettings(),
+        currentPage: 'dashboard',
+        resultsFilterMode: 'exact', // 'exact' | 'similar'
+        viewMode: 'grid', // 'grid' | 'list'
+        queuedFiles: [], // { id, name, path, folder, size, ext, lastModified, fileObj, url }
+        photos: new Map(), // id -> PhotoRecord
+        exactGroups: [],
+        similarGroups: [],
+        protectedIds: new Set(),
+        deletedIds: new Set(),
+        cleanedRecords: [], // { id, photo, timestamp, size, restored }
+        scanHistory: [],
+        scanning: false,
+        cancelRequested: false,
+        compareA: null,
+        compareB: null,
+        compareZoom: 1,
+        heatmapOn: false,
+        splitOn: false
+      };
+
+      function loadSettings() {
+        try {
+          const raw = localStorage.getItem('photocleaner_settings_v1');
+          return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
+        } catch {
+          return { ...DEFAULT_SETTINGS };
+        }
+      }
+
+      function saveSettings() {
+        try {
+          localStorage.setItem('photocleaner_settings_v1', JSON.stringify(state.settings));
+        } catch {
+          // Storage blocked in private/sandbox mode; ignore gracefully
+        }
+      }
+
+      // ================================================================
+      // UTILITIES
+      // ================================================================
+      const $ = (id) => document.getElementById(id);
+
+      function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let v = bytes, i = 0;
+        while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+        return i === 0 ? `${Math.round(v)} B` : `${v.toFixed(2)} ${units[i]}`;
+      }
+
+      function formatDate(ms) {
+        if (!ms) return '—';
+        const d = new Date(ms);
+        return isNaN(d.getTime()) ? '—' : d.toISOString().slice(0, 19).replace('T', ' ');
+      }
+
+      function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, (c) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[c]);
+      }
+
+      let toastTimer = null;
+      function showToast(msg, icon = '✅') {
+        const el = $('toast');
+        $('toastIcon').textContent = icon;
+        $('toastMsg').textContent = msg;
+        el.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('show'), 3400);
+      }
+
+      // ================================================================
+      // THEME MANAGER
+      // ================================================================
+      function detectDeviceLayout() {
+        const pref = state.settings.layoutMode || 'auto';
+        if (pref === 'windows' || pref === 'phone') return pref;
+        const ua = navigator.userAgent || '';
+        const isMobileUa = /Android|iPhone|iPod|Windows Phone|Mobile/i.test(ua);
+        const isSmallScreen = window.innerWidth < 768;
+        return (isSmallScreen || (isMobileUa && window.innerWidth < 1024)) ? 'phone' : 'windows';
+      }
+
+      function applyAdaptiveLayout() {
+        const layout = detectDeviceLayout();
+        document.documentElement.setAttribute('data-layout', layout);
+        const isWin = /Windows/i.test(navigator.userAgent || '');
+        $('desktopPlatformLabel').textContent = isWin ? 'Windows Layout • Offline' : 'Desktop Layout • Offline';
+        if ($('setLayoutMode')) $('setLayoutMode').value = state.settings.layoutMode || 'auto';
+        if (layout === 'windows') $('phoneMoreSheet').classList.remove('open');
+      }
+
+      function applyTheme(theme) {
+        const t = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+        state.settings.theme = t;
+        $('themeToggleBtn').textContent = t === 'dark' ? 'Switch to Light Theme (Ctrl+T)' : 'Switch to Dark Theme (Ctrl+T)';
+        $('setTheme').value = t;
+        saveSettings();
+      }
+
+      // ================================================================
+      // NAVIGATION
+      // ================================================================
+      function navigateTo(page) {
+        state.currentPage = page;
+        document.querySelectorAll('.page-section').forEach((s) => s.classList.add('hidden'));
+        document.querySelectorAll('.nav-btn').forEach((b) => {
+          b.classList.toggle('active', b.dataset.page === page);
+        });
+        const morePages = new Set(['large', 'compare', 'history', 'settings']);
+        document.querySelectorAll('.phone-tab-btn').forEach((b) => {
+          const match = b.dataset.page === page || (b.dataset.page === 'more' && morePages.has(page));
+          b.classList.toggle('active', match);
+        });
+        const PAGE_TITLES = {
+          dashboard: 'Dashboard', scan: 'Scan Photos', exact: 'Exact Duplicates',
+          similar: 'Similar Photos', large: 'Large Photos', compare: 'Image Comparison',
+          history: 'History', settings: 'Settings'
+        };
+        $('phoneHeaderSubtitle').textContent = `${PAGE_TITLES[page] || 'PhotoCleaner'} • Phone Mode`;
+        $('phoneMoreSheet').classList.remove('open');
+
+        if (page === 'exact' || page === 'similar') {
+          state.resultsFilterMode = page;
+          $('page-results').classList.remove('hidden');
+          $('resultsTitle').textContent = page === 'exact' ? 'Exact Duplicates' : 'Similar Photos';
+          $('resultsCatFilter').classList.toggle('hidden', page === 'exact');
+          renderResults();
+        } else {
+          const target = $(`page-${page}`);
+          if (target) target.classList.remove('hidden');
+        }
+
+        if (page === 'dashboard') renderDashboard();
+        if (page === 'large') renderLargePhotos();
+        if (page === 'compare') renderCompareSelectors();
+        if (page === 'history') renderHistory();
+        if (page === 'settings') {
+          $('setTheme').value = state.settings.theme;
+          $('setLayoutMode').value = state.settings.layoutMode || 'auto';
+          $('setRetention').value = state.settings.retentionRule;
+          $('setBurstSec').value = state.settings.burstSeconds;
+        }
+        // Collapse mobile menu after selection
+        if (window.innerWidth < 1024) $('sidebar').classList.add('hidden');
+      }
+
+      // ================================================================
+      // CRYPTOGRAPHIC SHA-256 & PERCEPTUAL HASHING (pHash + dHash + HSV)
+      // ================================================================
+      async function computeSha256(arrayBuffer) {
+        if (window.crypto && crypto.subtle) {
+          const digest = await crypto.subtle.digest('SHA-256', arrayBuffer);
+          return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+        }
+        // Pure-JS fallback hash (FNV-1a 64-bit pair) if subtle crypto is unavailable in non-secure context
+        const bytes = new Uint8Array(arrayBuffer);
+        let h1 = 0x811c9dc5, h2 = 0x9e3779b9;
+        for (let i = 0; i < bytes.length; i++) {
+          h1 = Math.imul(h1 ^ bytes[i], 0x01000193) >>> 0;
+          h2 = Math.imul(h2 ^ bytes[i], 0x85ebca6b) >>> 0;
+        }
+        return `${bytes.length.toString(16)}_${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+      }
+
+      // Precompute 32x32 Type-II DCT cosine matrix for fast 64-bit pHash
+      const DCT_N = 32;
+      const COS_TABLE = Array.from({ length: DCT_N }, (_, u) =>
+        Array.from({ length: DCT_N }, (_, x) => Math.cos(((2 * x + 1) * u * Math.PI) / (2 * DCT_N)))
+      );
+
+      function computePHashFromGray(gray32) {
+        // 1D DCT along rows then columns (first 8x8 low frequencies only)
+        const tmp = new Float32Array(DCT_N * 8);
+        for (let y = 0; y < DCT_N; y++) {
+          for (let u = 0; u < 8; u++) {
+            let sum = 0;
+            const rowOff = y * DCT_N;
+            for (let x = 0; x < DCT_N; x++) sum += gray32[rowOff + x] * COS_TABLE[u][x];
+            tmp[y * 8 + u] = sum;
+          }
+        }
+        const low = new Float32Array(64);
+        for (let v = 0; v < 8; v++) {
+          for (let u = 0; u < 8; u++) {
+            let sum = 0;
+            for (let y = 0; y < DCT_N; y++) sum += tmp[y * 8 + u] * COS_TABLE[v][y];
+            low[v * 8 + u] = sum;
+          }
+        }
+        // Median excluding DC component
+        const ac = Array.from(low.slice(1)).sort((a, b) => a - b);
+        const med = ac[Math.floor(ac.length / 2)];
+        let hi = 0, lo = 0;
+        for (let i = 0; i < 64; i++) {
+          const bit = low[i] > med ? 1 : 0;
+          if (i < 32) hi = ((hi << 1) | bit) >>> 0;
+          else lo = ((lo << 1) | bit) >>> 0;
+        }
+        return [hi, lo];
+      }
+
+      function computeDHashFromGray9x8(gray9x8) {
+        let hi = 0, lo = 0, idx = 0;
+        for (let y = 0; y < 8; y++) {
+          for (let x = 0; x < 8; x++) {
+            const bit = gray9x8[y * 9 + x + 1] > gray9x8[y * 9 + x] ? 1 : 0;
+            if (idx < 32) hi = ((hi << 1) | bit) >>> 0;
+            else lo = ((lo << 1) | bit) >>> 0;
+            idx++;
+          }
+        }
+        return [hi, lo];
+      }
+
+      function popcount32(x) {
+        x = x - ((x >>> 1) & 0x55555555);
+        x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+        return (((x + (x >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
+      }
+
+      function hamming64(a, b) {
+        return popcount32((a[0] ^ b[0]) >>> 0) + popcount32((a[1] ^ b[1]) >>> 0);
+      }
+
+      function extractCanvasHashes(img, transform = 'none') {
+        // Draw into 32x32 for pHash & 9x8 for dHash
+        const c32 = document.createElement('canvas');
+        c32.width = 32; c32.height = 32;
+        const ctx = c32.getContext('2d', { willReadFrequently: true });
+        ctx.save();
+        if (transform === 'rotated_90') {
+          ctx.translate(32, 0); ctx.rotate(Math.PI / 2);
+          ctx.drawImage(img, 0, 0, 32, 32);
+        } else if (transform === 'rotated_180') {
+          ctx.translate(32, 32); ctx.rotate(Math.PI);
+          ctx.drawImage(img, 0, 0, 32, 32);
+        } else if (transform === 'rotated_270') {
+          ctx.translate(0, 32); ctx.rotate(-Math.PI / 2);
+          ctx.drawImage(img, 0, 0, 32, 32);
+        } else if (transform === 'flipped_h') {
+          ctx.translate(32, 0); ctx.scale(-1, 1);
+          ctx.drawImage(img, 0, 0, 32, 32);
+        } else if (transform === 'cropped') {
+          const dx = img.naturalWidth * 0.1, dy = img.naturalHeight * 0.1;
+          ctx.drawImage(img, dx, dy, img.naturalWidth * 0.8, img.naturalHeight * 0.8, 0, 0, 32, 32);
+        } else {
+          ctx.drawImage(img, 0, 0, 32, 32);
+        }
+        ctx.restore();
+
+        const data32 = ctx.getImageData(0, 0, 32, 32).data;
+        const gray32 = new Float32Array(1024);
+        let minG = 255, maxG = 0;
+        for (let i = 0; i < 1024; i++) {
+          const g = 0.299 * data32[i * 4] + 0.587 * data32[i * 4 + 1] + 0.114 * data32[i * 4 + 2];
+          gray32[i] = g;
+          if (g < minG) minG = g;
+          if (g > maxG) maxG = g;
+        }
+        // Contrast stretch for brightness-change robustness
+        const span = Math.max(1, maxG - minG);
+        for (let i = 0; i < 1024; i++) gray32[i] = ((gray32[i] - minG) / span) * 255;
+
+        const phash = computePHashFromGray(gray32);
+
+        // 9x8 gradient dHash
+        const c9 = document.createElement('canvas');
+        c9.width = 9; c9.height = 8;
+        const ctx9 = c9.getContext('2d', { willReadFrequently: true });
+        ctx9.drawImage(c32, 0, 0, 9, 8);
+        const d9 = ctx9.getImageData(0, 0, 9, 8).data;
+        const gray9 = new Float32Array(72);
+        for (let i = 0; i < 72; i++) {
+          gray9[i] = 0.299 * d9[i * 4] + 0.587 * d9[i * 4 + 1] + 0.114 * d9[i * 4 + 2];
+        }
+        const dhash = computeDHashFromGray9x8(gray9);
+
+        let colorHist = null;
+        if (transform === 'none') {
+          // 18-bin RGB normalized color histogram
+          const hist = new Float32Array(18);
+          for (let i = 0; i < 1024; i++) {
+            hist[Math.min(5, Math.floor(data32[i * 4] / 43))] += 1;
+            hist[6 + Math.min(5, Math.floor(data32[i * 4 + 1] / 43))] += 1;
+            hist[12 + Math.min(5, Math.floor(data32[i * 4 + 2] / 43))] += 1;
+          }
+          const total = 1024 * 3;
+          for (let i = 0; i < 18; i++) hist[i] /= total;
+          colorHist = hist;
+        }
+        return { phash, dhash, colorHist };
+      }
+
+      function histOverlap(a, b) {
+        let s = 0;
+        for (let i = 0; i < a.length; i++) s += Math.min(a[i], b[i]);
+        return s;
+      }
+
+      function loadImageElement(url) {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error('Unreadable or corrupted image'));
+          img.src = url;
+        });
+      }
+
+      // ================================================================
+      // SMART AUTO MARK (WITH HARD SAFETY INVARIANTS)
+      // ================================================================
+      function scorePhotoForRetention(photo, rule) {
+        if (state.protectedIds.has(photo.id)) return [1e18, 'Protected by user'];
+        switch (rule) {
+          case 'highest_resolution':
+            return [photo.width * photo.height, `highest resolution (${photo.width}×${photo.height})`];
+          case 'largest_file_size':
+            return [photo.size, `largest file (${formatBytes(photo.size)})`];
+          case 'original_format':
+            return [FORMAT_RANK[photo.ext] || 50, `preferred format (${photo.ext.toUpperCase()})`];
+          case 'earliest_date':
+            return [-photo.lastModified, `earliest date (${formatDate(photo.lastModified)})`];
+          case 'latest_date':
+            return [photo.lastModified, `latest date (${formatDate(photo.lastModified)})`];
+          default:
+            return [photo.width * photo.height, `highest resolution (${photo.width}×${photo.height})`];
+        }
+      }
+
+      function autoMarkGroup(group) {
+        if (!group.members.length) return;
+        const rule = state.settings.retentionRule;
+        const ranked = [...group.members].sort((a, b) => {
+          const pA = state.protectedIds.has(a.photo.id) ? 1 : 0;
+          const pB = state.protectedIds.has(b.photo.id) ? 1 : 0;
+          if (pA !== pB) return pB - pA;
+          const [sA] = scorePhotoForRetention(a.photo, rule);
+          const [sB] = scorePhotoForRetention(b.photo, rule);
+          if (sA !== sB) return sB - sA;
+          if (a.photo.size !== b.photo.size) return b.photo.size - a.photo.size;
+          return a.photo.name.localeCompare(b.photo.name);
+        });
+
+        const keeper = ranked[0];
+        const [, reasonDesc] = scorePhotoForRetention(keeper.photo, rule);
+
+        for (const m of group.members) {
+          if (m === keeper) {
+            m.recommended = true;
+            m.marked = false;
+            m.reason = state.protectedIds.has(m.photo.id)
+              ? 'Protected by user'
+              : `Recommended to keep: ${reasonDesc}`;
+          } else if (state.protectedIds.has(m.photo.id)) {
+            m.recommended = true;
+            m.marked = false;
+            m.reason = 'Protected by user — excluded';
+          } else {
+            m.recommended = false;
+            m.marked = true;
+            m.reason = `Redundant copy of ${keeper.photo.name}`;
+          }
+        }
+      }
+
+      function safeToggleMember(group, memberId, wantMarked) {
+        const target = group.members.find((m) => m.photo.id === memberId);
+        if (!target) return false;
+        if (!wantMarked) {
+          target.marked = false;
+          return true;
+        }
+        if (state.protectedIds.has(memberId)) {
+          showToast('Protected photos cannot be marked for removal.', '🛡️');
+          return false;
+        }
+        const otherKept = group.members.filter((m) => m !== target && !m.marked).length;
+        if (otherKept < 1) {
+          showToast('Safety lock: at least one photo must stay kept in every group.', '🛡️');
+          return false;
+        }
+        target.marked = true;
+        return true;
+      }
+
+      function reverseGroupSelection(group) {
+        for (const m of group.members) {
+          m.marked = state.protectedIds.has(m.photo.id) ? false : !m.marked;
+        }
+        if (group.members.every((m) => m.marked)) {
+          group.members[0].marked = false;
+          group.members[0].reason = 'Preserved automatically (at least 1 copy must remain)';
+        }
+      }
+
+      // ================================================================
+      // 1-CLICK DEMO PHOTO LIBRARY GENERATOR (REAL CANVAS JPEGS/PNGS)
+      // ================================================================
+      async function createCanvasFile(canvas, filename, folder, mime = 'image/jpeg', quality = 0.92, mtimeOffsetMs = 0) {
+        const blob = await new Promise((res) => canvas.toBlob(res, mime, quality));
+        const file = new File([blob], filename, { type: mime, lastModified: Date.now() - mtimeOffsetMs });
+        return {
+          id: `demo_${Math.random().toString(36).slice(2, 10)}`,
+          name: filename,
+          folder,
+          path: `${folder}\\${filename}`,
+          size: file.size,
+          ext: filename.split('.').pop().toLowerCase(),
+          lastModified: file.lastModified,
+          fileObj: file,
+          url: URL.createObjectURL(file)
+        };
+      }
+
+      function drawRichScene(seed, w = 480, h = 360) {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        let s = seed * 9301 + 49297;
+        const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+
+        const grad = ctx.createLinearGradient(0, 0, w, h);
+        grad.addColorStop(0, `hsl(${Math.floor(rand() * 360)}, 68%, 48%)`);
+        grad.addColorStop(1, `hsl(${Math.floor(rand() * 360)}, 62%, 24%)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Mountains / horizon
+        ctx.fillStyle = `hsl(${Math.floor(rand() * 360)}, 45%, 22%)`;
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+        for (let x = 0; x <= w; x += w / 6) {
+          ctx.lineTo(x, h * (0.45 + rand() * 0.35));
+        }
+        ctx.lineTo(w, h);
+        ctx.closePath();
+        ctx.fill();
+
+        // Landmarks
+        for (let i = 0; i < 9; i++) {
+          ctx.fillStyle = `hsla(${Math.floor(rand() * 360)}, 75%, 60%, 0.85)`;
+          const rx = rand() * (w - 80), ry = rand() * (h - 80);
+          const rw = 28 + rand() * 75, rh = 24 + rand() * 65;
+          if (i % 2 === 0) ctx.fillRect(rx, ry, rw, rh);
+          else {
+            ctx.beginPath();
+            ctx.arc(rx + rw / 2, ry + rh / 2, Math.min(rw, rh) / 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        return c;
+      }
+
+      async function loadDemoLibrary(autoRunScan = false) {
+        clearQueuedUrls();
+        state.queuedFiles = [];
+        const base1 = drawRichScene(11, 640, 480);
+
+        // 1. Original + 2 Exact byte-for-byte copies
+        const origItem = await createCanvasFile(base1, 'Mountain_Sunset_Orig.jpg', 'Pictures\\Vacation_2025', 'image/jpeg', 0.95, 500000);
+        const origBuf = await origItem.fileObj.arrayBuffer();
+        const makeExact = (name, folder) => {
+          const f = new File([origBuf], name, { type: 'image/jpeg', lastModified: origItem.lastModified });
+          return {
+            id: `demo_${Math.random().toString(36).slice(2, 10)}`,
+            name, folder, path: `${folder}\\${name}`,
+            size: f.size, ext: 'jpg', lastModified: f.lastModified,
+            fileObj: f, url: URL.createObjectURL(f)
+          };
+        };
+
+        // 2. Resized version
+        const cResize = document.createElement('canvas');
+        cResize.width = 320; cResize.height = 240;
+        cResize.getContext('2d').drawImage(base1, 0, 0, 320, 240);
+
+        // 3. Compressed version
+        // 4. Rotated 90° version
+        const cRot = document.createElement('canvas');
+        cRot.width = 480; cRot.height = 640;
+        const rCtx = cRot.getContext('2d');
+        rCtx.translate(480, 0); rCtx.rotate(Math.PI / 2);
+        rCtx.drawImage(base1, 0, 0);
+
+        // 5. Horizontally flipped version
+        const cFlip = document.createElement('canvas');
+        cFlip.width = 640; cFlip.height = 480;
+        const fCtx = cFlip.getContext('2d');
+        fCtx.translate(640, 0); fCtx.scale(-1, 1);
+        fCtx.drawImage(base1, 0, 0);
+
+        // 6. Brightness-edited version
+        const cBright = document.createElement('canvas');
+        cBright.width = 640; cBright.height = 480;
+        const bCtx = cBright.getContext('2d');
+        bCtx.filter = 'brightness(1.28) contrast(1.06)';
+        bCtx.drawImage(base1, 0, 0);
+
+        // 7. Burst pair (same scene with slight shift, 1.5s apart)
+        const baseBurst = drawRichScene(77, 480, 360);
+        const cBurst2 = document.createElement('canvas');
+        cBurst2.width = 480; cBurst2.height = 360;
+        cBurst2.getContext('2d').drawImage(baseBurst, -6, 0);
+
+        // 8. Unrelated distinct scenes (should NEVER be grouped!)
+        const dist1 = drawRichScene(203, 480, 360);
+        const dist2 = drawRichScene(519, 480, 360);
+        const dist3 = drawRichScene(841, 480, 360);
+
+        state.queuedFiles = [
+          origItem,
+          makeExact('Mountain_Sunset_Copy.jpg', 'Pictures\\Vacation_2025'),
+          makeExact('IMG_BACKUP_001.jpg', 'Pictures\\Phone_Backup'),
+          await createCanvasFile(cResize, 'Mountain_Sunset_WebSmall.jpg', 'Pictures\\Exports', 'image/jpeg', 0.88, 300000),
+          await createCanvasFile(base1, 'Mountain_Sunset_Compressed.jpg', 'Pictures\\WhatsApp', 'image/jpeg', 0.25, 250000),
+          await createCanvasFile(cRot, 'Mountain_Sunset_Rotated90.jpg', 'Pictures\\Edits', 'image/jpeg', 0.90, 200000),
+          await createCanvasFile(cFlip, 'Mountain_Sunset_Flipped.jpg', 'Pictures\\Edits', 'image/jpeg', 0.90, 180000),
+          await createCanvasFile(cBright, 'Mountain_Sunset_BrightEdit.jpg', 'Pictures\\Edits', 'image/jpeg', 0.92, 160000),
+          await createCanvasFile(baseBurst, 'Burst_Shot_01.jpg', 'Pictures\\CameraRoll', 'image/jpeg', 0.92, 90000),
+          await createCanvasFile(cBurst2, 'Burst_Shot_02.jpg', 'Pictures\\CameraRoll', 'image/jpeg', 0.92, 88500),
+          await createCanvasFile(dist1, 'City_Architecture.png', 'Pictures\\Travel', 'image/png', 1.0, 400000),
+          await createCanvasFile(dist2, 'Botanical_Garden.png', 'Pictures\\Nature', 'image/png', 1.0, 350000),
+          await createCanvasFile(dist3, 'Coastal_Harbor.jpg', 'Pictures\\Travel', 'image/jpeg', 0.92, 320000)
+        ];
+
+        updateQueueUI();
+        showToast(`Loaded ${state.queuedFiles.length} demo photographs!`, '🎉');
+        if (autoRunScan) {
+          navigateTo('scan');
+          await runScan();
+        }
+      }
+
+      // ================================================================
+      // FILE INGESTION (FOLDER / FILES / DRAG & DROP)
+      // ================================================================
+      function clearQueuedUrls() {
+        for (const q of state.queuedFiles) {
+          if (!state.photos.has(q.id)) URL.revokeObjectURL(q.url);
+        }
+      }
+
+      function addFilesToQueue(fileList) {
+        const validExt = new Set(['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff']);
+        let added = 0;
+        for (const file of fileList) {
+          const ext = (file.name.split('.').pop() || '').toLowerCase();
+          if (!validExt.has(ext) && !file.type.startsWith('image/')) continue;
+          const rel = file._relPath || file.webkitRelativePath || file.name;
+          const parts = rel.split('/');
+          const folder = parts.length > 1 ? parts.slice(0, -1).join('\\') : 'Selected Files';
+          state.queuedFiles.push({
+            id: `ph_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: file.name,
+            folder,
+            path: parts.length > 1 ? rel.replace(/\//g, '\\') : file.name,
+            size: file.size,
+            ext: ext || 'img',
+            lastModified: file.lastModified || Date.now(),
+            fileObj: file,
+            url: URL.createObjectURL(file)
+          });
+          added++;
+        }
+        updateQueueUI();
+        if (added > 0) showToast(`Added ${added} image(s) to scan queue.`, '📂');
+        else showToast('No supported image files found in selection.', '⚠️');
+      }
+
+      function updateQueueUI() {
+        const count = state.queuedFiles.length;
+        const totalBytes = state.queuedFiles.reduce((s, f) => s + f.size, 0);
+        $('queuedInfo').textContent = count
+          ? `${count} photograph(s) queued (${formatBytes(totalBytes)}) — ready to scan.`
+          : 'No photos queued yet.';
+        $('btnStartScan').disabled = count === 0 || state.scanning;
+      }
+
+      // ================================================================
+      // SCAN ENGINE (EXACT SHA-256 + MULTI-STAGE PERCEPTUAL SIMILARITY)
+      // ================================================================
+      async function runScan() {
+        if (state.scanning || !state.queuedFiles.length) return;
+        state.scanning = true;
+        state.cancelRequested = false;
+        $('btnStartScan').disabled = true;
+        $('btnCancelScan').disabled = false;
+
+        const mode = $('scanModeSelect').value;
+        const profileKey = $('profileSelect').value;
+        const prof = PROFILES[profileKey] || PROFILES.balanced;
+        const checkRot = $('chkRotations').checked;
+        const checkFlipCrop = $('chkFlips').checked;
+
+        state.photos.clear();
+        state.deletedIds.clear();
+        state.exactGroups = [];
+        state.similarGroups = [];
+
+        const total = state.queuedFiles.length;
+        const parsed = [];
+        let skippedCorrupt = 0;
+
+        for (let i = 0; i < total; i++) {
+          if (state.cancelRequested) break;
+          const q = state.queuedFiles[i];
+          $('scanStatusText').textContent = `Analysing ${i + 1} / ${total} photographs…`;
+          $('scanCurrentFile').textContent = `Current file: ${q.path}`;
+          $('scanProgressBar').style.width = `${Math.round(((i + 1) / total) * 75)}%`;
+
+          try {
+            const buf = await q.fileObj.arrayBuffer();
+            const sha256 = await computeSha256(buf);
+            const imgEl = await loadImageElement(q.url);
+            const baseSig = extractCanvasHashes(imgEl, 'none');
+
+            const variants = {};
+            if (mode !== 'exact') {
+              if (checkRot) {
+                variants.rotated_90 = extractCanvasHashes(imgEl, 'rotated_90');
+                variants.rotated_180 = extractCanvasHashes(imgEl, 'rotated_180');
+                variants.rotated_270 = extractCanvasHashes(imgEl, 'rotated_270');
+              }
+              if (checkFlipCrop) {
+                variants.flipped_h = extractCanvasHashes(imgEl, 'flipped_h');
+                variants.cropped = extractCanvasHashes(imgEl, 'cropped');
+              }
+            }
+
+            const rec = {
+              ...q,
+              width: imgEl.naturalWidth,
+              height: imgEl.naturalHeight,
+              sha256,
+              phash: baseSig.phash,
+              dhash: baseSig.dhash,
+              colorHist: baseSig.colorHist,
+              variants
+            };
+            state.photos.set(rec.id, rec);
+            parsed.push(rec);
+          } catch {
+            skippedCorrupt++;
+          }
+          if (i % 4 === 0) await new Promise((r) => setTimeout(r, 0));
+        }
+
+        if (state.cancelRequested) {
+          state.scanning = false;
+          $('btnStartScan').disabled = false;
+          $('btnCancelScan').disabled = true;
+          $('scanStatusText').textContent = 'Scan cancelled by user.';
+          showToast('Scan cancelled.', '⏹️');
+          return;
+        }
+
+        // Stage 1: Exact SHA-256 Duplicates
+        $('scanStatusText').textContent = 'Grouping exact SHA-256 duplicates…';
+        $('scanProgressBar').style.width = '85%';
+        const exactShaSet = new Set();
+
+        if (mode === 'exact' || mode === 'both') {
+          const bySha = new Map();
+          for (const p of parsed) {
+            if (!bySha.has(p.sha256)) bySha.set(p.sha256, []);
+            bySha.get(p.sha256).push(p);
+          }
+          let gNum = 1;
+          for (const [sha, list] of bySha.entries()) {
+            if (list.length < 2) continue;
+            exactShaSet.add(sha);
+            const members = list.map((photo) => ({
+              photo,
+              similarity: 100.0,
+              transform: 'none',
+              marked: false,
+              recommended: false,
+              reason: '',
+              explanation: `Identical SHA-256 hash (${sha.slice(0, 12)}…)`
+            }));
+            const totalSize = list.reduce((s, p) => s + p.size, 0);
+            const grp = {
+              id: `exact_${gNum++}`,
+              category: 'exact_duplicate',
+              categoryLabel: 'Exact Duplicate',
+              avgSimilarity: 100.0,
+              totalSize,
+              reclaimable: totalSize - Math.max(...list.map((p) => p.size)),
+              explanation: `${list.length} byte-for-byte identical files (SHA-256: ${sha.slice(0, 12)}…)`,
+              members
+            };
+            autoMarkGroup(grp);
+            state.exactGroups.push(grp);
+          }
+        }
+
+        // Stage 2: Multi-Stage Similar Photos (category-isolated Union-Find)
+        if (mode === 'similar' || mode === 'both') {
+          $('scanStatusText').textContent = 'Comparing perceptual signatures & transforms…';
+          $('scanProgressBar').style.width = '94%';
+
+          // Deduplicate exact copies down to 1 representative per SHA so exact groups stay isolated
+          const reps = [];
+          const seenSha = new Set();
+          for (const p of parsed) {
+            if (seenSha.has(p.sha256)) continue;
+            seenSha.add(p.sha256);
+            reps.push(p);
+          }
+
+          const ufByCat = new Map();
+          const edgeInfo = new Map();
+          const find = (uf, x) => { while (uf.get(x) !== x) x = uf.get(x); return x; };
+          const union = (cat, a, b) => {
+            if (!ufByCat.has(cat)) ufByCat.set(cat, new Map());
+            const uf = ufByCat.get(cat);
+            if (!uf.has(a)) uf.set(a, a);
+            if (!uf.has(b)) uf.set(b, b);
+            const ra = find(uf, a), rb = find(uf, b);
+            if (ra !== rb) uf.set(rb, ra);
+          };
+
+          // Build 8-band Multi-Index Hash (MIH) index for sub-quadratic candidate lookup
+          const useMih = reps.length > 250;
+          const mihBands = Array.from({ length: 8 }, () => new Map());
+          const getBands = (h) => [
+            h[0] & 0xff, (h[0] >>> 8) & 0xff, (h[0] >>> 16) & 0xff, (h[0] >>> 24) & 0xff,
+            h[1] & 0xff, (h[1] >>> 8) & 0xff, (h[1] >>> 16) & 0xff, (h[1] >>> 24) & 0xff
+          ];
+          if (useMih) {
+            for (let idx = 0; idx < reps.length; idx++) {
+              const addHashToIndex = (h) => {
+                const bs = getBands(h);
+                for (let b = 0; b < 8; b++) {
+                  const k = bs[b];
+                  if (!mihBands[b].has(k)) mihBands[b].set(k, []);
+                  mihBands[b].get(k).push(idx);
+                }
+              };
+              addHashToIndex(reps[idx].phash);
+              for (const v of Object.values(reps[idx].variants)) addHashToIndex(v.phash);
+            }
+          }
+
+          for (let i = 0; i < reps.length; i++) {
+            if (state.cancelRequested) break;
+            if (i % 40 === 0) await new Promise((r) => setTimeout(r, 0));
+            let candidates;
+            if (useMih) {
+              const candSet = new Set();
+              const bs = getBands(reps[i].phash);
+              for (let b = 0; b < 8; b++) {
+                const bucket = mihBands[b].get(bs[b]);
+                if (bucket) for (const idx of bucket) if (idx > i) candSet.add(idx);
+              }
+              candidates = Array.from(candSet);
+            } else {
+              candidates = [];
+              for (let j = i + 1; j < reps.length; j++) candidates.push(j);
+            }
+
+            for (const j of candidates) {
+              const A = reps[i], B = reps[j];
+              let bestP = hamming64(A.phash, B.phash);
+              let bestD = hamming64(A.dhash, B.dhash);
+              let bestTransform = 'none';
+              let bestSum = bestP + bestD;
+
+              for (const [label, v] of Object.entries(A.variants)) {
+                const dp = hamming64(v.phash, B.phash);
+                const dd = hamming64(v.dhash, B.dhash);
+                if (dp + dd + 4 < bestSum) {
+                  bestSum = dp + dd; bestP = dp; bestD = dd; bestTransform = label;
+                }
+              }
+
+              const cSim = histOverlap(A.colorHist, B.colorHist);
+              const score = Math.round(((1 - bestP / 64) * 0.55 + (1 - bestD / 64) * 0.30 + cSim * 0.15) * 1000) / 10;
+              const dtSec = Math.abs(A.lastModified - B.lastModified) / 1000;
+
+              let cat = null;
+              let label = '';
+              if (dtSec <= state.settings.burstSeconds && bestP <= prof.maxP + 4 && bestP > 1) {
+                cat = 'burst_photo'; label = 'Burst Photograph';
+              } else if (bestTransform !== 'none' && bestP <= prof.editP + 3 && bestD <= prof.maxD + 2) {
+                cat = 'edited_version'; label = 'Edited Version';
+              } else if (bestP <= prof.nearP && bestD <= prof.nearP + 3 && cSim >= 0.72) {
+                cat = 'near_identical'; label = 'Near-Identical';
+              } else if (bestP <= prof.editP && bestD <= prof.editP + 4) {
+                cat = 'edited_version'; label = 'Edited Version';
+              } else if (bestP <= prof.maxP && bestD <= prof.maxD && cSim >= prof.minColor) {
+                cat = 'visually_similar'; label = 'Visually Similar';
+              }
+
+              if (!cat) continue;
+              union(cat, A.id, B.id);
+              const detail = `${label} (pHash Δ=${bestP}/64, dHash Δ=${bestD}/64, color=${Math.round(cSim * 100)}%${bestTransform !== 'none' ? ', ' + bestTransform : ''})`;
+              edgeInfo.set(`${cat}:${A.id}`, { score, transform: bestTransform, detail });
+              edgeInfo.set(`${cat}:${B.id}`, { score, transform: bestTransform, detail });
+            }
+          }
+
+          const CAT_LABELS = {
+            near_identical: 'Near-Identical',
+            edited_version: 'Edited Version',
+            visually_similar: 'Visually Similar',
+            burst_photo: 'Burst Photograph'
+          };
+
+          let sNum = 1;
+          for (const [cat, uf] of ufByCat.entries()) {
+            const clusters = new Map();
+            for (const id of uf.keys()) {
+              const r = find(uf, id);
+              if (!clusters.has(r)) clusters.set(r, []);
+              clusters.get(r).push(id);
+            }
+            for (const ids of clusters.values()) {
+              if (ids.length < 2) continue;
+              const members = ids.map((id) => {
+                const photo = state.photos.get(id);
+                const info = edgeInfo.get(`${cat}:${id}`) || { score: 90, transform: 'none', detail: CAT_LABELS[cat] };
+                return {
+                  photo,
+                  similarity: info.score,
+                  transform: info.transform,
+                  marked: false,
+                  recommended: false,
+                  reason: '',
+                  explanation: info.detail
+                };
+              });
+              const totalSize = members.reduce((s, m) => s + m.photo.size, 0);
+              const avgSim = Math.round((members.reduce((s, m) => s + m.similarity, 0) / members.length) * 10) / 10;
+              const grp = {
+                id: `sim_${sNum++}`,
+                category: cat,
+                categoryLabel: CAT_LABELS[cat],
+                avgSimilarity: avgSim,
+                totalSize,
+                reclaimable: totalSize - Math.max(...members.map((m) => m.photo.size)),
+                explanation: `${CAT_LABELS[cat]} group (${members.length} photos, avg visual score ${avgSim}%)`,
+                members
+              };
+              autoMarkGroup(grp);
+              state.similarGroups.push(grp);
+            }
+          }
+        }
+
+        // Record Scan History
+        const totalSavings = [...state.exactGroups, ...state.similarGroups].reduce((s, g) => s + g.reclaimable, 0);
+        state.scanHistory.unshift({
+          timestamp: Date.now(),
+          mode,
+          profile: profileKey,
+          scanned: parsed.length,
+          exact: state.exactGroups.length,
+          similar: state.similarGroups.length,
+          savings: totalSavings
+        });
+
+        state.scanning = false;
+        $('btnStartScan').disabled = false;
+        $('btnCancelScan').disabled = true;
+        $('scanProgressBar').style.width = '100%';
+        const corruptNote = skippedCorrupt > 0 ? ` (${skippedCorrupt} unreadable skipped)` : '';
+        $('scanStatusText').textContent = `Scan complete — ${state.exactGroups.length} exact group(s), ${state.similarGroups.length} similar group(s)${corruptNote}.`;
+        updateNavBadges();
+        renderDashboard();
+        showToast(`Scan finished! Found ${state.exactGroups.length} exact & ${state.similarGroups.length} similar group(s).`, '✨');
+
+        if (state.exactGroups.length > 0) navigateTo('exact');
+        else if (state.similarGroups.length > 0) navigateTo('similar');
+        else navigateTo('dashboard');
+      }
+
+      // ================================================================
+      // RENDERING: DASHBOARD, RESULTS, LARGE, COMPARE, HISTORY
+      // ================================================================
+      function updateNavBadges() {
+        $('navExactBadge').textContent = state.exactGroups.length;
+        $('navSimilarBadge').textContent = state.similarGroups.length;
+        $('phoneExactCnt').textContent = state.exactGroups.length;
+        $('phoneSimCnt').textContent = state.similarGroups.length;
+      }
+
+      function renderDashboard() {
+        const allGroups = [...state.exactGroups, ...state.similarGroups];
+        const potential = allGroups.reduce((s, g) => s + g.reclaimable, 0);
+        const reclaimed = state.cleanedRecords.filter((r) => !r.restored).reduce((s, r) => s + r.size, 0);
+
+        const remainingCount = Array.from(state.photos.values()).filter((p) => !state.deletedIds.has(p.id)).length;
+        $('kpiTotalPhotos').textContent = remainingCount.toLocaleString();
+        $('dashDownloadZipBtn').disabled = remainingCount === 0;
+        $('dashDownloadZipBtn').textContent = remainingCount ? `Download Clean Photos (${remainingCount})` : 'Download Clean Photos (.zip)';
+        $('kpiExactGroups').textContent = state.exactGroups.length.toLocaleString();
+        $('kpiSimilarGroups').textContent = state.similarGroups.length.toLocaleString();
+        $('kpiSavings').textContent = formatBytes(potential);
+        $('kpiReclaimedSub').textContent = `Reclaimed this session: ${formatBytes(reclaimed)}`;
+
+        if (state.scanHistory.length) {
+          const last = state.scanHistory[0];
+          $('dashSubtitle').textContent = `Last scan: ${formatDate(last.timestamp)} • ${last.scanned} photos analysed • Protected: ${state.protectedIds.size}`;
+        }
+
+        $('dashScansBody').innerHTML = state.scanHistory.length
+          ? state.scanHistory.slice(0, 6).map((s) => `
+              <tr>
+                <td class="py-2 pr-3">${escapeHtml(formatDate(s.timestamp))}</td>
+                <td class="py-2 pr-3 capitalize">${escapeHtml(s.mode)}</td>
+                <td class="py-2 pr-3">${s.scanned}</td>
+                <td class="py-2 pr-3">${s.exact + s.similar}</td>
+                <td class="py-2 font-medium text-[var(--accent)]">${formatBytes(s.savings)}</td>
+              </tr>`).join('')
+          : '<tr><td colspan="5" class="py-4 text-center text-mut">No scans recorded yet. Click "Try 1-Click Demo Library" or "Scan Your Photos".</td></tr>';
+
+        const activeCleaned = state.cleanedRecords.slice(0, 6);
+        $('dashCleanupBody').innerHTML = activeCleaned.length
+          ? activeCleaned.map((c) => `
+              <tr>
+                <td class="py-2 pr-3">${escapeHtml(formatDate(c.timestamp))}</td>
+                <td class="py-2 pr-3 truncate max-w-[160px]">${escapeHtml(c.photo.name)}</td>
+                <td class="py-2 pr-3">${formatBytes(c.size)}</td>
+                <td class="py-2">${c.restored ? '<span class="badge badge-protected">RESTORED</span>' : '<span class="badge badge-keep">CLEANED</span>'}</td>
+              </tr>`).join('')
+          : '<tr><td colspan="4" class="py-4 text-center text-mut">No cleanup operations yet.</td></tr>';
+      }
+
+      function getActiveGroups() {
+        return state.resultsFilterMode === 'exact' ? state.exactGroups : state.similarGroups;
+      }
+
+      function getFilteredGroups() {
+        const q = $('resultsSearch').value.trim().toLowerCase();
+        const cat = $('resultsCatFilter').value;
+        const sort = $('resultsSort').value;
+
+        let list = getActiveGroups().filter((g) => {
+          if (state.resultsFilterMode === 'similar' && cat !== 'all' && g.category !== cat) return false;
+          if (q && !g.members.some((m) => m.photo.path.toLowerCase().includes(q))) return false;
+          return true;
+        });
+
+        list = [...list];
+        if (sort === 'similarity') list.sort((a, b) => b.avgSimilarity - a.avgSimilarity);
+        else if (sort === 'count') list.sort((a, b) => b.members.length - a.members.length);
+        else list.sort((a, b) => b.reclaimable - a.reclaimable);
+        return list;
+      }
+
+      function renderResults() {
+        const groups = getFilteredGroups();
+        const allGroups = getActiveGroups();
+        const selectedMembers = allGroups.flatMap((g) => g.members.filter((m) => m.marked && !state.protectedIds.has(m.photo.id)));
+        const selBytes = selectedMembers.reduce((s, m) => s + m.photo.size, 0);
+
+        $('resultsSummary').textContent = `${allGroups.length} group(s) • ${selectedMembers.length} marked for cleanup (${formatBytes(selBytes)} reclaimable)`;
+        const cleanCount = Array.from(state.photos.values()).filter((p) => !state.deletedIds.has(p.id)).length;
+        $('btnOpenCleanupModal').textContent = `Delete Selected (${selectedMembers.length})`;
+        $('btnOpenCleanupModal').disabled = selectedMembers.length === 0;
+        $('btnDownloadCleanZip').disabled = cleanCount === 0;
+        $('btnDownloadCleanZip').textContent = cleanCount ? `Download Clean Photos (${cleanCount})` : 'Download Clean Photos (.zip)';
+        const deletedActive = state.cleanedRecords.filter((r) => !r.restored);
+        $('cleanupDoneBanner').classList.toggle('hidden', deletedActive.length === 0);
+        if (deletedActive.length > 0) {
+          const recBytes = deletedActive.reduce((s, r) => s + r.size, 0);
+          $('cleanupDoneText').textContent = `${deletedActive.length} duplicate(s) removed (${formatBytes(recBytes)} saved) • ${cleanCount} clean photo(s) ready to download.`;
+        }
+        $('btnToggleViewMode').textContent = state.viewMode === 'grid' ? 'List View' : 'Grid View';
+
+        const container = $('resultsContainer');
+        if (!groups.length) {
+          container.innerHTML = `
+            <div class="surface rounded-xl p-10 text-center space-y-3">
+              <div class="text-3xl">✨</div>
+              <div class="font-semibold">No ${state.resultsFilterMode === 'exact' ? 'exact duplicate' : 'similar photo'} groups found</div>
+              <p class="text-xs text-mut">Scan your folders or try the 1-Click Demo Library from the Dashboard or Scan Photos page.</p>
+            </div>`;
+          return;
+        }
+
+        if (state.viewMode === 'list') {
+          container.innerHTML = `
+            <div class="surface rounded-xl overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="text-mut border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+                  <tr>
+                    <th class="p-3">Mark</th>
+                    <th class="p-3">Group</th>
+                    <th class="p-3">Filename</th>
+                    <th class="p-3">Size</th>
+                    <th class="p-3">Resolution</th>
+                    <th class="p-3">Score</th>
+                    <th class="p-3">Status</th>
+                    <th class="p-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[var(--border-subtle)]">
+                  ${groups.flatMap((g, gi) => g.members.map((m) => {
+                    const isProt = state.protectedIds.has(m.photo.id);
+                    const badge = isProt ? '<span class="badge badge-protected">PROTECTED</span>'
+                      : m.marked ? '<span class="badge badge-remove">REMOVE</span>'
+                      : '<span class="badge badge-keep">KEEP</span>';
+                    return `
+                      <tr>
+                        <td class="p-3"><input type="checkbox" data-action="toggle" data-gid="${g.id}" data-pid="${m.photo.id}" ${m.marked ? 'checked' : ''} ${isProt ? 'disabled' : ''} class="accent-[var(--danger)] cursor-pointer" /></td>
+                        <td class="p-3">#${gi + 1} (${escapeHtml(g.categoryLabel)})</td>
+                        <td class="p-3 font-medium">${escapeHtml(m.photo.name)}</td>
+                        <td class="p-3">${formatBytes(m.photo.size)}</td>
+                        <td class="p-3">${m.photo.width}×${m.photo.height}</td>
+                        <td class="p-3">${m.similarity.toFixed(1)}%</td>
+                        <td class="p-3">${badge}</td>
+                        <td class="p-3 flex gap-1.5">
+                          <button class="btn text-xs py-1 px-2" data-action="protect" data-gid="${g.id}" data-pid="${m.photo.id}">${isProt ? 'Unprotect' : 'Protect'}</button>
+                          <button class="btn text-xs py-1 px-2" data-action="compare" data-gid="${g.id}" data-pid="${m.photo.id}">Compare</button>
+                          <button class="btn text-xs py-1 px-2" data-action="downloadOne" data-gid="${g.id}" data-pid="${m.photo.id}">Download</button>
+                          <button class="btn btn-danger text-xs py-1 px-2" data-action="deleteOne" data-gid="${g.id}" data-pid="${m.photo.id}" ${isProt ? 'disabled' : ''}>Delete</button>
+                        </td>
+                      </tr>`;
+                  })).join('')}
+                </tbody>
+              </table>
+            </div>`;
+          return;
+        }
+
+        // Grid View
+        container.innerHTML = groups.map((g, gi) => `
+          <div class="surface rounded-xl p-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-semibold text-sm">Group #${gi + 1}</span>
+                <span class="badge badge-cat">${escapeHtml(g.categoryLabel)}</span>
+                <span class="text-xs text-mut">${g.members.length} photos • Reclaimable: ${formatBytes(g.reclaimable)}</span>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn text-xs py-1 px-2.5" data-action="reverse" data-gid="${g.id}">Reverse</button>
+                <button class="btn text-xs py-1 px-2.5" data-action="compareTop" data-gid="${g.id}">Compare Top 2</button>
+                <button class="btn btn-danger text-xs py-1 px-2.5" data-action="deleteGroup" data-gid="${g.id}">Delete Group Duplicates</button>
+              </div>
+            </div>
+            <div class="text-xs text-mut">${escapeHtml(g.explanation)}</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              ${g.members.map((m) => {
+                const isProt = state.protectedIds.has(m.photo.id);
+                const cardCls = isProt ? 'protected-card' : (m.marked ? 'marked' : 'keeper');
+                const badge = isProt ? '<span class="badge badge-protected">PROTECTED</span>'
+                  : m.marked ? '<span class="badge badge-remove">REMOVE</span>'
+                  : '<span class="badge badge-keep">KEEP</span>';
+                return `
+                  <div class="photo-card ${cardCls} p-3 flex flex-col gap-2">
+                    <div class="flex items-center justify-between gap-2">
+                      <label class="inline-flex items-center gap-1.5 text-xs cursor-pointer">
+                        <input type="checkbox" data-action="toggle" data-gid="${g.id}" data-pid="${m.photo.id}" ${m.marked ? 'checked' : ''} ${isProt ? 'disabled' : ''} class="accent-[var(--danger)]" />
+                        <span>Mark</span>
+                      </label>
+                      ${badge}
+                    </div>
+                    <div class="h-36 rounded-lg overflow-hidden bg-[var(--bg-input)] flex items-center justify-center">
+                      <img src="${m.photo.url}" alt="${escapeHtml(m.photo.name)}" class="max-w-full max-h-full object-contain" />
+                    </div>
+                    <div class="font-semibold text-xs truncate" title="${escapeHtml(m.photo.path)}">${escapeHtml(m.photo.name)}</div>
+                    <div class="text-[11px] text-mut">${formatBytes(m.photo.size)} • ${m.photo.width}×${m.photo.height} • ${m.photo.ext.toUpperCase()}</div>
+                    <div class="text-[11px] text-mut truncate" title="${escapeHtml(m.photo.folder)}">📁 ${escapeHtml(m.photo.folder)}</div>
+                    <div class="text-[11px] text-sec leading-snug">${escapeHtml(m.reason || m.explanation)}</div>
+                    <div class="grid grid-cols-2 gap-1.5 mt-auto pt-1">
+                      <button class="btn text-[11px] py-1 px-2" data-action="protect" data-gid="${g.id}" data-pid="${m.photo.id}">${isProt ? 'Unprotect' : 'Protect'}</button>
+                      <button class="btn text-[11px] py-1 px-2" data-action="compare" data-gid="${g.id}" data-pid="${m.photo.id}">Compare</button>
+                      <button class="btn text-[11px] py-1 px-2" data-action="downloadOne" data-gid="${g.id}" data-pid="${m.photo.id}">Download</button>
+                      <button class="btn btn-danger text-[11px] py-1 px-2" data-action="deleteOne" data-gid="${g.id}" data-pid="${m.photo.id}" ${isProt ? 'disabled' : ''}>Delete</button>
+                    </div>
+                  </div>`;
+              }).join('')}
+            </div>
+          </div>`).join('');
+      }
+
+      // Event Delegation for Results Grid & List
+      $('resultsContainer').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const gid = btn.dataset.gid;
+        const pid = btn.dataset.pid;
+        const group = getActiveGroups().find((g) => g.id === gid);
+        if (!group) return;
+
+        if (action === 'reverse') {
+          reverseGroupSelection(group);
+          renderResults();
+        } else if (action === 'protect') {
+          if (state.protectedIds.has(pid)) {
+            state.protectedIds.delete(pid);
+            showToast('Protection removed.', '🔓');
+          } else {
+            state.protectedIds.add(pid);
+            const m = group.members.find((x) => x.photo.id === pid);
+            if (m) m.marked = false;
+            showToast('Photo protected — it can never be marked for cleanup.', '🛡️');
+          }
+          renderResults();
+        } else if (action === 'compareTop') {
+          if (group.members.length >= 2) openComparison(group.members[0].photo.id, group.members[1].photo.id, group.explanation);
+        } else if (action === 'compare') {
+          const other = group.members.find((m) => m.photo.id !== pid);
+          if (other) openComparison(pid, other.photo.id, group.explanation);
+        } else if (action === 'deleteOne') {
+          deleteSingleMember(group, pid);
+        } else if (action === 'deleteGroup') {
+          deleteGroupDuplicates(group);
+        } else if (action === 'downloadOne') {
+          downloadSinglePhoto(pid);
+        }
+      });
+
+      $('resultsContainer').addEventListener('change', (e) => {
+        const chk = e.target.closest('input[data-action="toggle"]');
+        if (!chk) return;
+        const group = getActiveGroups().find((g) => g.id === chk.dataset.gid);
+        if (!group) return;
+        const ok = safeToggleMember(group, chk.dataset.pid, chk.checked);
+        if (!ok) chk.checked = !chk.checked;
+        renderResults();
+      });
+
+      // ================================================================
+      // LARGE PHOTOS
+      // ================================================================
+      function renderLargePhotos() {
+        const minBytes = Math.max(0, Number($('largeThresholdKb').value) || 0) * 1024;
+        const list = Array.from(state.photos.values())
+          .filter((p) => !state.deletedIds.has(p.id) && p.size >= minBytes)
+          .sort((a, b) => b.size - a.size);
+
+        const total = list.reduce((s, p) => s + p.size, 0);
+        $('largeSummary').textContent = `Found ${list.length} photo(s) ≥ ${formatBytes(minBytes)} (Total: ${formatBytes(total)})`;
+
+        const byFmt = {};
+        for (const p of list) byFmt[p.ext.toUpperCase()] = (byFmt[p.ext.toUpperCase()] || 0) + p.size;
+        const fmtEntries = Object.entries(byFmt).sort((a, b) => b[1] - a[1]);
+
+        $('largeFormatContent').innerHTML = fmtEntries.length
+          ? fmtEntries.map(([fmt, bytes]) => {
+              const pct = total > 0 ? Math.max(4, Math.round((bytes / total) * 100)) : 0;
+              return `
+                <div class="flex items-center gap-3">
+                  <span class="w-14 font-semibold">${escapeHtml(fmt)}</span>
+                  <div class="flex-1 h-2.5 rounded-full bg-[var(--bg-input)] overflow-hidden">
+                    <div class="h-full bg-[var(--accent)]" style="width:${pct}%"></div>
+                  </div>
+                  <span class="w-24 text-right text-mut">${formatBytes(bytes)}</span>
+                </div>`;
+            }).join('')
+          : '<div class="text-mut">No photographs match this size threshold yet.</div>';
+
+        $('largeTableBody').innerHTML = list.length
+          ? list.map((p) => `
+              <tr>
+                <td class="p-2.5"><img src="${p.url}" alt="${escapeHtml(p.name)}" class="w-12 h-9 object-cover rounded" /></td>
+                <td class="p-2.5 font-medium">${escapeHtml(p.name)}</td>
+                <td class="p-2.5 font-semibold text-[var(--accent)]">${formatBytes(p.size)}</td>
+                <td class="p-2.5">${p.width}×${p.height}</td>
+                <td class="p-2.5 uppercase">${escapeHtml(p.ext)}</td>
+                <td class="p-2.5 text-mut">${escapeHtml(p.folder)}</td>
+              </tr>`).join('')
+          : '<tr><td colspan="6" class="p-6 text-center text-mut">No photos above threshold. Lower the KB limit or run a scan.</td></tr>';
+      }
+
+      // ================================================================
+      // IMAGE COMPARISON (SYNC ZOOM, SPLIT CURTAIN, PIXEL DIFF HEATMAP)
+      // ================================================================
+      function openComparison(idA, idB, explanation = '') {
+        state.compareA = idA;
+        state.compareB = idB;
+        state.heatmapOn = false;
+        state.compareZoom = 1;
+        $('compareExplain').textContent = explanation || 'Side-by-side comparison';
+        navigateTo('compare');
+      }
+
+      function renderCompareSelectors() {
+        const all = Array.from(state.photos.values()).filter((p) => !state.deletedIds.has(p.id));
+        if (state.compareA && state.deletedIds.has(state.compareA)) state.compareA = null;
+        if (state.compareB && state.deletedIds.has(state.compareB)) state.compareB = null;
+        const opts = all.map((p) => `<option value="${p.id}">${escapeHtml(p.name)} (${formatBytes(p.size)})</option>`).join('');
+        $('compareSelectA').innerHTML = opts || '<option value="">No photos scanned</option>';
+        $('compareSelectB').innerHTML = opts || '<option value="">No photos scanned</option>';
+
+        if (!state.compareA && all.length >= 1) state.compareA = all[0].id;
+        if (!state.compareB && all.length >= 2) state.compareB = all[1].id;
+        if (state.compareA) $('compareSelectA').value = state.compareA;
+        if (state.compareB) $('compareSelectB').value = state.compareB;
+        renderComparisonView();
+      }
+
+      async function renderComparisonView() {
+        const a = state.photos.get(state.compareA);
+        const b = state.photos.get(state.compareB);
+        $('zoomLabel').textContent = `${Math.round(state.compareZoom * 100)}%`;
+        $('btnToggleHeatmap').textContent = state.heatmapOn ? 'Show Original Right' : 'Highlight Pixel Differences';
+
+        if (!a || !b) {
+          $('compareMetaBody').innerHTML = '<tr><td colspan="3" class="p-4 text-center text-mut">Scan at least two photos to compare them side by side.</td></tr>';
+          return;
+        }
+
+        $('compareImgA').src = a.url;
+        $('compareImgB').src = b.url;
+        $('splitImgA').src = a.url;
+        $('splitImgB').src = b.url;
+
+        const scaleCss = `scale(${state.compareZoom})`;
+        $('compareImgA').style.transform = scaleCss;
+        $('compareImgB').style.transform = scaleCss;
+        $('compareDiffCanvas').style.transform = scaleCss;
+
+        if (state.heatmapOn) {
+          $('compareImgB').classList.add('hidden');
+          $('compareDiffCanvas').classList.remove('hidden');
+          await drawPixelDiffHeatmap(a, b);
+        } else {
+          $('compareImgB').classList.remove('hidden');
+          $('compareDiffCanvas').classList.add('hidden');
+        }
+
+        const pDist = hamming64(a.phash, b.phash);
+        const dDist = hamming64(a.dhash, b.dhash);
+        const sameSha = a.sha256 === b.sha256 ? 'Identical (Exact Match)' : 'Different';
+        const rows = [
+          ['Filename', a.name, b.name],
+          ['File Size', formatBytes(a.size), formatBytes(b.size)],
+          ['Resolution', `${a.width} × ${a.height}`, `${b.width} × ${b.height}`],
+          ['Format', a.ext.toUpperCase(), b.ext.toUpperCase()],
+          ['Modified Date', formatDate(a.lastModified), formatDate(b.lastModified)],
+          ['SHA-256 Identity', sameSha, `pHash Δ=${pDist}/64 • dHash Δ=${dDist}/64`],
+          ['Folder', a.folder, b.folder]
+        ];
+        $('compareMetaBody').innerHTML = rows.map(([k, v1, v2]) => `
+          <tr>
+            <td class="p-2.5 font-semibold text-sec">${escapeHtml(k)}</td>
+            <td class="p-2.5">${escapeHtml(v1)}</td>
+            <td class="p-2.5">${escapeHtml(v2)}</td>
+          </tr>`).join('');
+      }
+
+      async function drawPixelDiffHeatmap(a, b) {
+        const [imgA, imgB] = await Promise.all([loadImageElement(a.url), loadImageElement(b.url)]);
+        const w = Math.min(480, imgA.naturalWidth);
+        const h = Math.round((w / imgA.naturalWidth) * imgA.naturalHeight);
+        const cA = document.createElement('canvas'); cA.width = w; cA.height = h;
+        const cB = document.createElement('canvas'); cB.width = w; cB.height = h;
+        cA.getContext('2d').drawImage(imgA, 0, 0, w, h);
+        cB.getContext('2d').drawImage(imgB, 0, 0, w, h);
+
+        const dA = cA.getContext('2d').getImageData(0, 0, w, h).data;
+        const dB = cB.getContext('2d').getImageData(0, 0, w, h).data;
+        const outCanvas = $('compareDiffCanvas');
+        outCanvas.width = w; outCanvas.height = h;
+        const oCtx = outCanvas.getContext('2d');
+        const out = oCtx.createImageData(w, h);
+
+        for (let i = 0; i < dA.length; i += 4) {
+          const diff = Math.min(255, ((Math.abs(dA[i] - dB[i]) + Math.abs(dA[i + 1] - dB[i + 1]) + Math.abs(dA[i + 2] - dB[i + 2])) / 3) * 3.2);
+          // Inferno-like false-color ramp
+          out.data[i]     = Math.min(255, diff * 1.4);
+          out.data[i + 1] = diff > 120 ? (diff - 120) * 1.8 : diff * 0.25;
+          out.data[i + 2] = diff < 120 ? Math.min(255, diff * 1.6) : Math.max(0, 255 - diff);
+          out.data[i + 3] = 255;
+        }
+        oCtx.putImageData(out, 0, 0);
+      }
+
+      // ================================================================
+      // SAFE CLEANUP MODAL, UNDO, & WINDOWS RECYCLE BIN SCRIPT EXPORT
+      // ================================================================
+      function getSelectedCleanupMembers() {
+        return getActiveGroups().flatMap((g) =>
+          g.members.filter((m) => m.marked && !state.protectedIds.has(m.photo.id)).map((m) => ({ group: g, member: m }))
+        );
+      }
+
+      function openCleanupModal() {
+        const items = getSelectedCleanupMembers();
+        if (!items.length) return;
+        const totalSize = items.reduce((s, x) => s + x.member.photo.size, 0);
+        $('cleanupModalStats').textContent = `${items.length} file(s) selected • Expected storage recovery: ${formatBytes(totalSize)}`;
+        $('cleanupModalList').innerHTML = items.map((x) => `
+          <div class="flex justify-between gap-2">
+            <span class="truncate">${escapeHtml(x.member.photo.path)}</span>
+            <span class="text-mut shrink-0">${formatBytes(x.member.photo.size)}</span>
+          </div>`).join('');
+        $('cleanupModal').classList.add('open');
+      }
+
+      function performSafeDeletions(items) {
+        if (!items.length) return 0;
+        const now = Date.now();
+        let reclaimed = 0;
+        let deletedCount = 0;
+
+        for (const { group, member } of items) {
+          if (state.protectedIds.has(member.photo.id)) continue;
+          const remaining = group.members.filter((m) => m.photo.id !== member.photo.id);
+          if (remaining.length < 1) continue;
+
+          group.members = remaining;
+          group.totalSize = remaining.reduce((s, m) => s + m.photo.size, 0);
+          group.reclaimable = Math.max(0, group.totalSize - Math.max(...remaining.map((m) => m.photo.size)));
+          reclaimed += member.photo.size;
+          deletedCount++;
+          state.deletedIds.add(member.photo.id);
+
+          // Also remove this deleted photo from any other group referencing it
+          for (const g of [...state.exactGroups, ...state.similarGroups]) {
+            if (g === group) continue;
+            const filtered = g.members.filter((m) => m.photo.id !== member.photo.id);
+            if (filtered.length !== g.members.length && filtered.length >= 1) {
+              g.members = filtered;
+              g.totalSize = filtered.reduce((s, m) => s + m.photo.size, 0);
+              g.reclaimable = Math.max(0, g.totalSize - Math.max(...filtered.map((m) => m.photo.size)));
+            }
+          }
+
+          state.cleanedRecords.unshift({
+            id: `cln_${now}_${Math.random().toString(36).slice(2, 7)}`,
+            photo: member.photo,
+            groupId: group.id,
+            groupBucket: group.category === 'exact_duplicate' ? 'exact' : 'similar',
+            groupMeta: {
+              id: group.id,
+              category: group.category,
+              categoryLabel: group.categoryLabel,
+              avgSimilarity: group.avgSimilarity,
+              explanation: group.explanation
+            },
+            survivorSnapshot: remaining.map((r) => ({ ...r })),
+            memberSnapshot: { ...member, marked: false },
+            timestamp: now,
+            size: member.photo.size,
+            restored: false
+          });
+        }
+
+        state.exactGroups = state.exactGroups.filter((g) => g.members.length >= 2);
+        state.similarGroups = state.similarGroups.filter((g) => g.members.length >= 2);
+
+        updateNavBadges();
+        renderResults();
+        renderDashboard();
+        if (deletedCount > 0) {
+          showToast(`Deleted ${deletedCount} duplicate(s) (${formatBytes(reclaimed)} freed). Click "Download Clean Photos (.zip)" when ready!`, '🗑️');
+        }
+        return deletedCount;
+      }
+
+      function deleteSingleMember(group, pid) {
+        if (state.protectedIds.has(pid)) {
+          showToast('Protected photos cannot be deleted. Unprotect it first.', '🛡️');
+          return;
+        }
+        if (group.members.length <= 1) {
+          showToast('Safety lock: cannot delete the last remaining photo in a group.', '🛡️');
+          return;
+        }
+        const member = group.members.find((m) => m.photo.id === pid);
+        if (!member) return;
+        performSafeDeletions([{ group, member }]);
+      }
+
+      function deleteGroupDuplicates(group) {
+        const targets = group.members
+          .filter((m) => m.marked && !state.protectedIds.has(m.photo.id))
+          .map((member) => ({ group, member }));
+        if (!targets.length) {
+          showToast('No duplicates are marked in this group. Check Mark or click Smart Auto Mark first.', '⚠️');
+          return;
+        }
+        performSafeDeletions(targets);
+      }
+
+      function confirmCleanup() {
+        const items = getSelectedCleanupMembers();
+        if (!items.length) return;
+        $('cleanupModal').classList.remove('open');
+        performSafeDeletions(items);
+      }
+
+      function buildOfflineStoreZip(entries) {
+        const enc = new TextEncoder();
+        const crcTable = new Uint32Array(256);
+        for (let i = 0; i < 256; i++) {
+          let c = i;
+          for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+          crcTable[i] = c >>> 0;
+        }
+        const crc32 = (u8) => {
+          let c = 0xffffffff;
+          for (let i = 0; i < u8.length; i++) c = crcTable[(c ^ u8[i]) & 0xff] ^ (c >>> 8);
+          return (c ^ 0xffffffff) >>> 0;
+        };
+        const localParts = [];
+        const centralParts = [];
+        let offset = 0;
+        for (const e of entries) {
+          const nameBytes = enc.encode(e.path);
+          const crc = crc32(e.data);
+          const lh = new Uint8Array(30 + nameBytes.length);
+          const lv = new DataView(lh.buffer);
+          lv.setUint32(0, 0x04034b50, true);
+          lv.setUint16(4, 20, true);
+          lv.setUint32(14, crc, true);
+          lv.setUint32(18, e.data.length, true);
+          lv.setUint32(22, e.data.length, true);
+          lv.setUint16(26, nameBytes.length, true);
+          lh.set(nameBytes, 30);
+          localParts.push(lh, e.data);
+
+          const ch = new Uint8Array(46 + nameBytes.length);
+          const cv = new DataView(ch.buffer);
+          cv.setUint32(0, 0x02014b50, true);
+          cv.setUint16(4, 20, true);
+          cv.setUint16(6, 20, true);
+          cv.setUint32(16, crc, true);
+          cv.setUint32(20, e.data.length, true);
+          cv.setUint32(24, e.data.length, true);
+          cv.setUint16(28, nameBytes.length, true);
+          cv.setUint32(42, offset, true);
+          ch.set(nameBytes, 46);
+          centralParts.push(ch);
+          offset += lh.length + e.data.length;
+        }
+        const centralSize = centralParts.reduce((s, a) => s + a.length, 0);
+        const eocd = new Uint8Array(22);
+        const ev = new DataView(eocd.buffer);
+        ev.setUint32(0, 0x06054b50, true);
+        ev.setUint16(8, entries.length, true);
+        ev.setUint16(10, entries.length, true);
+        ev.setUint32(12, centralSize, true);
+        ev.setUint32(16, offset, true);
+        return new Blob([...localParts, ...centralParts, eocd], { type: 'application/zip' });
+      }
+
+      function downloadSinglePhoto(pid) {
+        const photo = state.photos.get(pid);
+        if (!photo) return;
+        const a = document.createElement('a');
+        a.href = photo.url;
+        a.download = photo.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast(`Downloaded '${photo.name}'.`, '💾');
+      }
+
+      async function downloadCleanLibraryZip() {
+        const keptPhotos = Array.from(state.photos.values()).filter((p) => !state.deletedIds.has(p.id));
+        if (!keptPhotos.length) {
+          showToast('No clean photos available to download yet. Scan photos first.', '⚠️');
+          return;
+        }
+        showToast(`Packaging ${keptPhotos.length} clean photo(s) into ZIP…`, '📦');
+        const entries = [];
+        const usedPaths = new Set();
+
+        for (const photo of keptPhotos) {
+          let zipPath = (photo.path || photo.name).replace(/\\/g, '/').replace(/^\/+/, '');
+          if (usedPaths.has(zipPath)) {
+            const dot = zipPath.lastIndexOf('.');
+            const base = dot > 0 ? zipPath.slice(0, dot) : zipPath;
+            const ext = dot > 0 ? zipPath.slice(dot) : '';
+            let n = 2;
+            while (usedPaths.has(`${base}_${n}${ext}`)) n++;
+            zipPath = `${base}_${n}${ext}`;
+          }
+          usedPaths.add(zipPath);
+          const buf = new Uint8Array(await photo.fileObj.arrayBuffer());
+          entries.push({ path: zipPath, data: buf });
+        }
+
+        let blob;
+        if (typeof JSZip !== 'undefined') {
+          const zip = new JSZip();
+          for (const e of entries) zip.file(e.path, e.data);
+          blob = await zip.generateAsync({ type: 'blob' });
+        } else {
+          blob = buildOfflineStoreZip(entries);
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `PhotoCleaner_Clean_Library_${keptPhotos.length}_Photos.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        showToast(`Downloaded ${keptPhotos.length} clean photo(s) as ZIP!`, '🎉');
+      }
+
+      function renderHistory() {
+        $('historyCleanupBody').innerHTML = state.cleanedRecords.length
+          ? state.cleanedRecords.map((c) => `
+              <tr>
+                <td class="py-2 pr-3">${escapeHtml(formatDate(c.timestamp))}</td>
+                <td class="py-2 pr-3 font-medium">${escapeHtml(c.photo.path)}</td>
+                <td class="py-2 pr-3">${formatBytes(c.size)}</td>
+                <td class="py-2 pr-3">${c.restored ? '<span class="badge badge-protected">RESTORED</span>' : '<span class="badge badge-keep">MARKED FOR RECYCLE BIN</span>'}</td>
+                <td class="py-2">
+                  ${c.restored ? '<span class="text-mut">—</span>' : `<button class="btn text-[11px] py-1 px-2" data-restore="${c.id}">Undo</button>`}
+                </td>
+              </tr>`).join('')
+          : '<tr><td colspan="5" class="py-4 text-center text-mut">No cleanup operations recorded yet.</td></tr>';
+
+        $('historyScansBody').innerHTML = state.scanHistory.length
+          ? state.scanHistory.map((s) => `
+              <tr>
+                <td class="py-2 pr-3">${escapeHtml(formatDate(s.timestamp))}</td>
+                <td class="py-2 pr-3 capitalize">${escapeHtml(s.mode)}</td>
+                <td class="py-2 pr-3">${escapeHtml(s.profile.replace('_', ' '))}</td>
+                <td class="py-2 pr-3">${s.scanned}</td>
+                <td class="py-2 pr-3">${s.exact}</td>
+                <td class="py-2 pr-3">${s.similar}</td>
+                <td class="py-2 font-medium text-[var(--accent)]">${formatBytes(s.savings)}</td>
+              </tr>`).join('')
+          : '<tr><td colspan="7" class="py-4 text-center text-mut">No scans recorded yet.</td></tr>';
+      }
+
+      $('historyCleanupBody').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-restore]');
+        if (!btn) return;
+        const rec = state.cleanedRecords.find((r) => r.id === btn.dataset.restore);
+        if (!rec || rec.restored) return;
+        rec.restored = true;
+        state.deletedIds.delete(rec.photo.id);
+        const bucket = rec.groupBucket === 'exact' ? state.exactGroups : state.similarGroups;
+        let grp = bucket.find((g) => g.id === rec.groupId);
+        if (grp) {
+          if (!grp.members.some((m) => m.photo.id === rec.photo.id)) {
+            grp.members.push({ ...rec.memberSnapshot, marked: false });
+          }
+        } else if (rec.groupMeta && rec.survivorSnapshot) {
+          const activeSurvivors = rec.survivorSnapshot.filter((m) => !state.deletedIds.has(m.photo.id));
+          if (activeSurvivors.length >= 1) {
+            grp = {
+              ...rec.groupMeta,
+              members: [...activeSurvivors, { ...rec.memberSnapshot, marked: false }],
+              totalSize: 0,
+              reclaimable: 0
+            };
+            bucket.push(grp);
+          }
+        }
+        if (grp) {
+          grp.totalSize = grp.members.reduce((s, m) => s + m.photo.size, 0);
+          grp.reclaimable = Math.max(0, grp.totalSize - Math.max(...grp.members.map((m) => m.photo.size)));
+        }
+        updateNavBadges();
+        renderHistory();
+        renderDashboard();
+        showToast(`Restored '${rec.photo.name}' back into your clean photo library and group.`, '↩️');
+      });
+
+      function downloadTextFile(filename, content, mime = 'text/plain;charset=utf-8') {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+
+      function exportWindowsRecycleBinScript() {
+        const targets = state.cleanedRecords.filter((r) => !r.restored);
+        if (!targets.length) {
+          showToast('No cleaned files in history yet. Clean duplicates first to generate a Recycle Bin script.', '⚠️');
+          return;
+        }
+        const lines = [
+          '# PhotoCleaner — Safe Windows Recycle Bin Cleanup Script',
+          '# Moves ONLY your confirmed duplicate files to the Windows Recycle Bin (never permanent delete).',
+          '# Run this script inside the parent folder you scanned.',
+          'Add-Type -AssemblyName Microsoft.VisualBasic',
+          '$files = @(',
+          ...targets.map((t) => `  "${t.photo.path.replace(/"/g, '`"')}"`),
+          ')',
+          '$moved = 0',
+          'foreach ($rel in $files) {',
+          '  if (Test-Path $rel) {',
+          '    $full = (Resolve-Path $rel).Path',
+          '    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($full, "OnlyErrorDialogs", "SendToRecycleBin")',
+          '    Write-Host "Moved to Recycle Bin: $full" -ForegroundColor Green',
+          '    $moved++',
+          '  } else {',
+          '    Write-Host "Skipped (not found here): $rel" -ForegroundColor Yellow',
+          '  }',
+          '}',
+          'Write-Host "Done! Moved $moved file(s) safely to the Windows Recycle Bin." -ForegroundColor Cyan'
+        ];
+        downloadTextFile('Clean_Duplicates_To_RecycleBin.ps1', lines.join('\r\n'));
+        showToast('Downloaded Clean_Duplicates_To_RecycleBin.ps1!', '💾');
+      }
+
+      function exportCsvReport() {
+        const rows = [['Group', 'Category', 'Filename', 'Path', 'SizeBytes', 'Resolution', 'Score', 'Status']];
+        for (const g of [...state.exactGroups, ...state.similarGroups]) {
+          for (const m of g.members) {
+            const st = state.protectedIds.has(m.photo.id) ? 'PROTECTED' : (m.marked ? 'REMOVE' : 'KEEP');
+            rows.push([g.id, g.categoryLabel, m.photo.name, m.photo.path, m.photo.size, `${m.photo.width}x${m.photo.height}`, m.similarity, st]);
+          }
+        }
+        const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+        downloadTextFile('PhotoCleaner_Report.csv', csv, 'text/csv;charset=utf-8');
+        showToast('Exported PhotoCleaner_Report.csv!', '📄');
+      }
+
+      // ================================================================
+      // WIRE UP ALL CONTROLS & SHORTCUTS
+      // ================================================================
+      $('navList').addEventListener('click', (e) => {
+        const btn = e.target.closest('.nav-btn[data-page]');
+        if (btn) navigateTo(btn.dataset.page);
+      });
+
+      $('mobileMenuBtn').addEventListener('click', () => $('phoneMoreSheet').classList.toggle('open'));
+      $('btnCloseMoreSheet').addEventListener('click', () => $('phoneMoreSheet').classList.remove('open'));
+      $('phoneMoreSheet').addEventListener('click', (e) => {
+        if (e.target === $('phoneMoreSheet')) {
+          $('phoneMoreSheet').classList.remove('open');
+          return;
+        }
+        const btn = e.target.closest('.nav-btn[data-page]');
+        if (btn) navigateTo(btn.dataset.page);
+      });
+      $('phoneBottomNav').addEventListener('click', (e) => {
+        const btn = e.target.closest('.phone-tab-btn[data-page]');
+        if (!btn) return;
+        if (btn.dataset.page === 'more') $('phoneMoreSheet').classList.toggle('open');
+        else navigateTo(btn.dataset.page);
+      });
+      window.addEventListener('resize', applyAdaptiveLayout);
+      $('mobileThemeBtn').addEventListener('click', () => applyTheme(state.settings.theme === 'dark' ? 'light' : 'dark'));
+      $('themeToggleBtn').addEventListener('click', () => applyTheme(state.settings.theme === 'dark' ? 'light' : 'dark'));
+
+      $('dashQuickScanBtn').addEventListener('click', () => navigateTo('scan'));
+      $('dashGoScanBtn').addEventListener('click', () => navigateTo('scan'));
+      $('dashDemoBtn').addEventListener('click', () => loadDemoLibrary(true));
+      $('btnLoadDemo').addEventListener('click', () => loadDemoLibrary(false));
+
+      $('btnPickFolder').addEventListener('click', () => $('inputFolder').click());
+      $('btnPickFiles').addEventListener('click', () => $('inputFiles').click());
+      $('inputFolder').addEventListener('change', (e) => { addFilesToQueue(e.target.files); e.target.value = ''; });
+      $('inputFiles').addEventListener('change', (e) => { addFilesToQueue(e.target.files); e.target.value = ''; });
+      $('btnClearQueue').addEventListener('click', () => {
+        clearQueuedUrls();
+        state.queuedFiles = [];
+        updateQueueUI();
+        showToast('Cleared scan queue.', '🧹');
+      });
+
+      const dz = $('dropzone');
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+      async function collectDroppedFiles(dataTransfer) {
+        const items = dataTransfer.items;
+        if (!items || !items.length || typeof items[0].webkitGetAsEntry !== 'function') {
+          return Array.from(dataTransfer.files || []);
+        }
+        const collected = [];
+        async function readEntry(entry, prefix) {
+          if (entry.isFile) {
+            const file = await new Promise((res) => entry.file(res, () => res(null)));
+            if (file) {
+              Object.defineProperty(file, '_relPath', { value: prefix ? `${prefix}/${file.name}` : file.name });
+              collected.push(file);
+            }
+          } else if (entry.isDirectory) {
+            const reader = entry.createReader();
+            const nextPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+            while (true) {
+              const batch = await new Promise((res) => reader.readEntries(res, () => res([])));
+              if (!batch || !batch.length) break;
+              for (const child of batch) await readEntry(child, nextPath);
+            }
+          }
+        }
+        const entries = [];
+        for (const item of items) {
+          const entry = item.webkitGetAsEntry();
+          if (entry) entries.push(entry);
+        }
+        for (const entry of entries) await readEntry(entry, '');
+        return collected.length ? collected : Array.from(dataTransfer.files || []);
+      }
+
+      dz.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dz.classList.remove('dragover');
+        if (e.dataTransfer) {
+          const files = await collectDroppedFiles(e.dataTransfer);
+          addFilesToQueue(files);
+        }
+      });
+
+      $('btnStartScan').addEventListener('click', runScan);
+      $('btnCancelScan').addEventListener('click', () => { state.cancelRequested = true; });
+
+      $('resultsSearch').addEventListener('input', renderResults);
+      $('resultsCatFilter').addEventListener('change', renderResults);
+      $('resultsSort').addEventListener('change', renderResults);
+      $('btnToggleViewMode').addEventListener('click', () => {
+        state.viewMode = state.viewMode === 'grid' ? 'list' : 'grid';
+        renderResults();
+      });
+      $('btnAutoMarkAll').addEventListener('click', () => {
+        getActiveGroups().forEach(autoMarkGroup);
+        renderResults();
+        showToast('Applied Smart Auto Mark safely across all groups.', '✨');
+      });
+      $('btnResetSelAll').addEventListener('click', () => {
+        getActiveGroups().forEach((g) => g.members.forEach((m) => { m.marked = false; }));
+        renderResults();
+        showToast('Cleared all removal selections.', '🔄');
+      });
+
+      $('btnOpenCleanupModal').addEventListener('click', openCleanupModal);
+      $('btnCloseCleanupModal').addEventListener('click', () => $('cleanupModal').classList.remove('open'));
+      $('btnCancelCleanup').addEventListener('click', () => $('cleanupModal').classList.remove('open'));
+      $('btnConfirmCleanup').addEventListener('click', confirmCleanup);
+
+      $('btnRefreshLarge').addEventListener('click', renderLargePhotos);
+
+      $('compareSelectA').addEventListener('change', (e) => { state.compareA = e.target.value; renderComparisonView(); });
+      $('compareSelectB').addEventListener('change', (e) => { state.compareB = e.target.value; renderComparisonView(); });
+      $('btnZoomIn').addEventListener('click', () => { state.compareZoom = Math.min(4, state.compareZoom + 0.25); renderComparisonView(); });
+      $('btnZoomOut').addEventListener('click', () => { state.compareZoom = Math.max(0.5, state.compareZoom - 0.25); renderComparisonView(); });
+      $('btnZoomReset').addEventListener('click', () => { state.compareZoom = 1; renderComparisonView(); });
+      $('btnToggleHeatmap').addEventListener('click', () => { state.heatmapOn = !state.heatmapOn; renderComparisonView(); });
+      $('btnToggleSplit').addEventListener('click', () => {
+        state.splitOn = !state.splitOn;
+        $('compareSideBySide').classList.toggle('hidden', state.splitOn);
+        $('compareSplitMode').classList.toggle('hidden', !state.splitOn);
+        $('btnToggleSplit').textContent = state.splitOn ? 'Side-by-Side' : 'Split Curtain';
+      });
+      $('splitRange').addEventListener('input', (e) => {
+        const pct = 100 - Number(e.target.value);
+        $('splitImgA').style.clipPath = `inset(0 ${pct}% 0 0)`;
+      });
+
+      // Synchronized scroll panning between left and right viewports
+      let syncingScroll = false;
+      ['viewportA', 'viewportB'].forEach((id, idx) => {
+        $(id).addEventListener('scroll', (e) => {
+          if (syncingScroll) return;
+          syncingScroll = true;
+          const other = $(idx === 0 ? 'viewportB' : 'viewportA');
+          other.scrollLeft = e.target.scrollLeft;
+          other.scrollTop = e.target.scrollTop;
+          syncingScroll = false;
+        });
+      });
+
+      $('btnDownloadPsScript').addEventListener('click', exportWindowsRecycleBinScript);
+      $('btnDownloadCleanZip').addEventListener('click', downloadCleanLibraryZip);
+      $('btnBannerDownloadZip').addEventListener('click', downloadCleanLibraryZip);
+      $('btnBannerPsScript').addEventListener('click', exportWindowsRecycleBinScript);
+      $('dashDownloadZipBtn').addEventListener('click', downloadCleanLibraryZip);
+      $('btnHistoryDownloadZip').addEventListener('click', downloadCleanLibraryZip);
+      $('btnDownloadCsv').addEventListener('click', exportCsvReport);
+
+      $('btnSaveSettings').addEventListener('click', () => {
+        applyTheme($('setTheme').value);
+        state.settings.layoutMode = $('setLayoutMode').value;
+        state.settings.retentionRule = $('setRetention').value;
+        state.settings.burstSeconds = Math.max(1, Number($('setBurstSec').value) || 3);
+        saveSettings();
+        applyAdaptiveLayout();
+        showToast('Settings & layout saved!', '⚙️');
+      });
+      $('setLayoutMode').addEventListener('change', (e) => {
+        state.settings.layoutMode = e.target.value;
+        saveSettings();
+        applyAdaptiveLayout();
+      });
+
+      function openPrivacyModal() {
+        $('phoneMoreSheet').classList.remove('open');
+        $('privacyModal').classList.add('open');
+      }
+
+      function clearAllPrivacyActivity() {
+        // Revoke every object URL so zero image previews remain in browser memory
+        for (const q of state.queuedFiles) {
+          try { URL.revokeObjectURL(q.url); } catch {}
+        }
+        for (const p of state.photos.values()) {
+          try { URL.revokeObjectURL(p.url); } catch {}
+        }
+
+        state.queuedFiles = [];
+        state.photos.clear();
+        state.protectedIds.clear();
+        state.deletedIds.clear();
+        state.exactGroups = [];
+        state.similarGroups = [];
+        state.cleanedRecords = [];
+        state.scanHistory = [];
+        state.compareA = null;
+        state.compareB = null;
+        state.heatmapOn = false;
+        state.splitOn = false;
+        state.compareZoom = 1;
+
+        // Wipe visible DOM previews, inputs, search bars, and canvases
+        $('inputFolder').value = '';
+        $('inputFiles').value = '';
+        $('resultsSearch').value = '';
+        $('scanProgressBar').style.width = '0%';
+        $('scanStatusText').textContent = 'Queue photos above to begin.';
+        $('scanCurrentFile').textContent = 'Current file: —';
+        $('dashSubtitle').textContent = 'Private on-device duplicate & similar photo intelligence — zero cloud uploads.';
+        $('cleanupDoneBanner').classList.add('hidden');
+        $('compareImgA').removeAttribute('src');
+        $('compareImgB').removeAttribute('src');
+        $('splitImgA').removeAttribute('src');
+        $('splitImgB').removeAttribute('src');
+        const diffCtx = $('compareDiffCanvas').getContext('2d');
+        if (diffCtx) diffCtx.clearRect(0, 0, $('compareDiffCanvas').width, $('compareDiffCanvas').height);
+        $('compareExplain').textContent = 'Select any two photos from a group or pick from the dropdowns below.';
+
+        // Erase saved browser storage for privacy
+        try { localStorage.removeItem('photocleaner_settings_v1'); } catch {}
+        try { sessionStorage.clear(); } catch {}
+
+        $('privacyModal').classList.remove('open');
+        $('cleanupModal').classList.remove('open');
+
+        updateQueueUI();
+        updateNavBadges();
+        renderResults();
+        renderLargePhotos();
+        renderCompareSelectors();
+        renderHistory();
+        renderDashboard();
+        navigateTo('dashboard');
+        showToast('All activity erased. No scan history, previews, or data remain.', '🔒');
+      }
+
+      $('btnResetAllApp').addEventListener('click', openPrivacyModal);
+      $('btnSidebarPrivacyClear').addEventListener('click', openPrivacyModal);
+      $('btnBannerPrivacyClear').addEventListener('click', openPrivacyModal);
+      $('btnHistoryPrivacyClear').addEventListener('click', openPrivacyModal);
+      $('btnPhonePrivacyClear').addEventListener('click', openPrivacyModal);
+      $('btnClosePrivacyModal').addEventListener('click', () => $('privacyModal').classList.remove('open'));
+      $('btnCancelPrivacy').addEventListener('click', () => $('privacyModal').classList.remove('open'));
+      $('btnConfirmPrivacy').addEventListener('click', clearAllPrivacyActivity);
+
+      // Keyboard Shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          $('cleanupModal').classList.remove('open');
+          $('privacyModal').classList.remove('open');
+          $('phoneMoreSheet').classList.remove('open');
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
+          e.preventDefault();
+          applyTheme(state.settings.theme === 'dark' ? 'light' : 'dark');
+        }
+      });
+
+      // Initialize
+      applyTheme(state.settings.theme);
+      applyAdaptiveLayout();
+      renderDashboard();
+    })();
+  </script>
+</body>
+</html>
